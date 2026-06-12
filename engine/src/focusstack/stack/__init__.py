@@ -7,6 +7,7 @@ from focusstack.stack.base import (
     register,
 )
 from focusstack.stack.sources import ArrayFrameSource, DirFrameSource
+import focusstack.stack.pmax  # noqa: E402,F401  (registers "pmax")
 
 __all__ = [
     "REGISTRY",
