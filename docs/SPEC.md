@@ -1,0 +1,300 @@
+# FocusStack — Professional GPU-Accelerated Focus Stacking Software
+
+**Specification v1.0 — 2026-06-12**
+
+This document is a complete, self-contained specification for building FocusStack, a professional focus-stacking application. It is written to be handed to an LLM (or a human team) for implementation. Follow the milestones in order; each has explicit acceptance criteria.
+
+---
+
+## 1. Product overview
+
+FocusStack merges a series of photographs taken at different focus distances ("a stack") into a single image that is sharp everywhere. Target users are professional macro, product, and landscape photographers who today use Zerene Stacker or Helicon Focus.
+
+**Core promises:**
+
+1. **Quality** — alignment and stacking results competitive with Zerene Stacker, including handling of focus breathing (scale change between frames), halo control, and full interactive retouching.
+2. **Speed** — CUDA acceleration for every heavy operation; a 50-frame 24 MP stack aligns and stacks (PMax) in under 60 seconds on an RTX 3080-class GPU.
+3. **Robustness** — never crashes on bad input or GPU memory exhaustion; every failure mode degrades gracefully (tiling → CPU fallback → clear error).
+4. **Professional workflow** — 16-bit pipeline end to end, ICC profile and EXIF preservation, batch processing, presets, CLI for automation, full retouching.
+
+**Explicit non-goals (do not build):** RAW decoding (input is developed TIFF/JPEG/PNG), exposure/HDR stacking, astro stacking, panorama stitching, cloud processing, mobile support, user accounts.
+
+---
+
+## 2. Tech stack and constraints
+
+| Layer | Technology |
+|---|---|
+| Processing engine | Python 3.12+, CuPy (CUDA 12.x) with custom `RawKernel`s for hot paths, NumPy CPU fallback |
+| Image I/O | `tifffile` (TIFF), `Pillow` (JPEG/PNG), `pyexiv2` (EXIF/XMP/ICC metadata) |
+| Alignment math | `opencv-python-headless` (ECC refinement on downscaled luminance), CuPy FFT (phase correlation), GPU warping via custom kernels |
+| Server | FastAPI + uvicorn, WebSocket progress streaming |
+| Frontend | Svelte 5 + Vite + TypeScript, no heavyweight UI framework |
+| Packaging | `pyproject.toml` (engine + server installable as `focusstack`), `npm` workspace for UI |
+| Platforms | Windows 11 and Linux. NVIDIA GPU (CUDA 12.x) is the primary target; everything must also run on CPU (NumPy) for machines without CUDA and for CI. |
+
+**Hard rules:**
+
+- The engine package (`focusstack.engine`) must have **zero imports from server or UI code**. It is importable and fully usable from a plain Python script.
+- Every algorithm runs identically (within float tolerance) on the CuPy and NumPy backends. The backend is selected at runtime, never at install time.
+- All image math is float32 in linear-light or gamma space as specified per stage (see §5). Integer math only at I/O boundaries.
+- No global mutable state in the engine. A stacking job is a pure function of (frames, parameters) → result.
+
+---
+
+## 3. Repository layout
+
+```
+focus-stacker/
+├── docs/
+│   └── SPEC.md                  # this document
+├── engine/
+│   ├── pyproject.toml           # package: focusstack
+│   └── src/focusstack/
+│       ├── backend/             # xp abstraction: cupy/numpy, kernel registry, memory pool
+│       │   ├── __init__.py      # get_backend(), Backend protocol
+│       │   ├── cuda.py          # CuPy backend + RawKernel sources
+│       │   ├── cpu.py           # NumPy backend (mirrors cuda.py API exactly)
+│       │   └── kernels/         # .cu kernel source files (loaded as text)
+│       ├── io/                  # load/save, metadata, color profiles
+│       ├── align/               # registration pipeline
+│       ├── stack/               # algorithm registry: pmax.py, dmap.py, weighted.py, slab.py
+│       ├── retouch/             # stroke compositing engine
+│       ├── post/                # halo suppression, contrast, sharpening
+│       ├── pipeline.py          # orchestrates load→align→stack→post
+│       ├── tiles.py             # tiled processing + viewer tile pyramid
+│       ├── project.py           # project file model (JSON on disk)
+│       └── cli.py               # `focusstack` CLI entry point
+├── server/
+│   └── src/focusstack_server/
+│       ├── main.py              # FastAPI app factory, static UI serving
+│       ├── jobs.py              # job queue, cancellation, progress events
+│       ├── api/                 # routers: projects, frames, jobs, viewer, retouch, export, system
+│       └── ws.py                # WebSocket progress hub
+├── ui/                          # Svelte 5 + Vite
+│   └── src/
+│       ├── routes/              # screens (see §10)
+│       ├── lib/viewer/          # tiled deep-zoom viewer component
+│       ├── lib/api.ts           # typed API client
+│       └── lib/stores/          # project, jobs, viewer state
+└── tests/
+    ├── engine/                  # unit + golden tests
+    ├── server/                  # API tests
+    └── synthetic/               # synthetic stack generator (§13.1)
+```
+
+---
+
+## 4. Engine: backend abstraction
+
+```python
+class Backend(Protocol):
+    name: str                    # "cuda" | "cpu"
+    xp: ModuleType               # cupy or numpy
+    def to_device(self, arr: np.ndarray) -> Array: ...
+    def to_host(self, arr: Array) -> np.ndarray: ...
+    def gaussian_blur(self, img, sigma) -> Array: ...
+    def resize(self, img, shape, interp) -> Array: ...
+    def warp(self, img, matrix, out_shape, interp) -> Array: ...   # affine or homography
+    def sharpness_map(self, gray, radius) -> Array: ...            # local Laplacian energy
+    def free_memory(self) -> int: ...                              # bytes available
+```
+
+- `get_backend(prefer: str = "auto")` returns the CUDA backend if CuPy initializes and a device is present, else CPU. The choice is logged and surfaced in the UI/system API. `prefer="cpu"` forces CPU (used in tests).
+- Custom CUDA kernels (in `backend/kernels/*.cu`, compiled with `cp.RawKernel`): Lanczos-3 warp (affine + homography), windowed Laplacian energy, pyramid coefficient selection (max-energy fold, §7.1), DMap blend. Everything else uses CuPy array ops / `cupyx.scipy.ndimage`.
+- CPU backend implements the same operations with NumPy/SciPy/OpenCV. **Parity requirement:** for every backend operation, a test asserts CPU and GPU outputs agree within `atol=1e-3` on random inputs.
+- **Memory discipline:** before each GPU stage, the engine estimates required VRAM. If the estimate exceeds 80% of free VRAM, it switches that stage to tiled mode (§8). On `cupy.cuda.memory.OutOfMemoryError` despite tiling, it frees the pool and reruns the stage on CPU, emitting a warning event. A job never fails due to OOM.
+
+---
+
+## 5. Image I/O and color
+
+**Input:** 8/16-bit TIFF (incl. compressed), JPEG, PNG. A stack's frames must share dimensions and bit depth; violations produce a per-file validation report (§12).
+
+**Working space:** images are decoded to float32 in [0, 1], **keeping the source gamma** (no linearization — stacking sharpness metrics behave better in gamma space, and this matches Zerene/Helicon behavior). The ICC profile bytes of the reference frame are carried through untouched and embedded in the output. No color conversion is ever performed.
+
+**Metadata:** EXIF and XMP are copied from the reference frame to the output via `pyexiv2`, then `Software`, and lens/focus-distance tags that no longer apply are updated/dropped. Add an XMP namespace `focusstack:` recording method, parameter hash, frame count, and app version.
+
+**Output:** 16-bit TIFF (default, with chosen compression: none/LZW/ZIP), 8-bit JPEG (quality slider), 16-bit PNG. File naming template with tokens: `{stack_name}`, `{method}`, `{frames}`, `{date}`, `{seq}`. DMap mode can additionally export the depth map as 16-bit grayscale TIFF/PNG.
+
+---
+
+## 6. Alignment
+
+Misaligned frames are the #1 cause of bad stacks. Focus stacks shift mainly by **scale** (focus breathing) plus small translation/rotation.
+
+**Pipeline (per stack):**
+
+1. **Reference frame:** middle frame by default (minimizes accumulated scale error); user-selectable.
+2. **Pairwise estimation, chained:** estimate the transform between each *consecutive* pair (small inter-frame motion → reliable), then compose transforms to map every frame to the reference. Direct-to-reference estimation is wrong here — do not do it.
+3. **Per pair:**
+   a. Convert both frames to luminance, downscale so the long edge ≤ 2048 px (configurable 1024–4096).
+   b. **Initial guess:** translation via phase correlation (CuPy FFT with Hann window) on GPU.
+   c. **Refinement:** OpenCV `findTransformECC` with `MOTION_EUCLIDEAN` + an explicit scale parameter — implement as ECC over a **similarity** model (translation + rotation + uniform scale) using a 3-level pyramid (ECC at /4, /2, /1 of the downscaled image, each initializing the next). Optional `MOTION_HOMOGRAPHY` mode for hand-held stacks (UI toggle: "Perspective alignment").
+   d. **Brightness/flicker normalization** (toggle, default on): match each frame's luminance mean/std to the reference inside the overlap region before metric evaluation, and optionally apply the gain to the output frames.
+4. **Quality gate:** record final ECC correlation per pair. Pairs below a threshold (default 0.90) are flagged; the UI shows them and offers exclude/keep. CLI flag `--drop-misaligned`.
+5. **Full-resolution warp on GPU:** scale the estimated similarity/homography to full resolution and warp each frame once with the chosen interpolation — Bilinear / Bicubic / **Lanczos-3 (default)** via the custom kernel. Output canvas = reference frame size; out-of-frame areas filled by edge clamp and recorded in a validity mask used by stacking (so soft borders, not black edges, appear in results).
+
+**Parameters (all exposed in UI + CLI + presets):** transform model (translation / similarity / perspective), max alignment resolution, interpolation, brightness normalization on/off, correlation threshold, reference frame.
+
+**Skip option:** "Frames are pre-aligned" bypasses alignment entirely (rail + telecentric setups).
+
+---
+
+## 7. Stacking algorithms
+
+Algorithms register themselves in a registry: `@register("pmax")` with a typed `Params` dataclass (name, type, default, range, UI label, tooltip). The UI and CLI build their parameter forms from this metadata — adding an algorithm requires no UI changes.
+
+All algorithms consume: an iterator of aligned float32 frames + validity masks (frames are **streamed from disk**, never all held in memory), and emit: result image + optional auxiliary outputs (depth map, selection map) + progress callbacks.
+
+### 7.1 PMax (Laplacian pyramid, max-energy selection) — Milestone 1
+
+The flagship algorithm, modeled on Zerene PMax.
+
+1. For each frame: build a Laplacian pyramid (Gaussian σ≈1.0 separable blur, downsample ×2; depth = `floor(log2(min(H,W))) − 5`, i.e. coarsest level ≥ 32 px).
+2. **Streaming fold:** maintain a running "best" pyramid. For each new frame's pyramid, at every level and pixel, compute local energy = |coefficient| smoothed over a 3×3 window; where the new energy exceeds the running best energy, replace coefficient and energy. The residual (top) level folds by weighted average with energy-derived weights. This makes memory usage **independent of frame count** — required for 200-frame stacks.
+3. Collapse the folded pyramid to the result.
+4. **Halo control:** after folding, apply a 3×3 majority/median filter to each level's *selection* decisions before final collapse (parameter "selection smoothing", 0–3, default 1). Document in tooltips that PMax can amplify noise and contrast; that is expected and matches Zerene.
+
+Outputs: result + per-level selection visualization (debug toggle).
+
+### 7.2 DMap (depth map) — Milestone 3
+
+1. Per frame, compute a sharpness map: local Laplacian energy within **estimation radius** (default 8 px, range 2–40).
+2. Streaming fold of `argmax` over frames → integer index map + max-sharpness map.
+3. **Contrast threshold** (default 7%, as fraction of the frame's sharpness histogram): pixels whose max sharpness is below threshold are "undecided".
+4. Smooth the index map with an edge-aware filter (guided filter, guide = max-sharpness image) with **smoothing radius** (default 16 px). Fill undecided regions by inpainting from decided neighbors (cv2.inpaint NS on the index map, or distance-weighted diffusion).
+5. **Second pass** over frames: composite output pixels from the frame each pixel's (smoothed, fractional) index points to, linearly blending between adjacent frames for fractional indices.
+6. Outputs: result + 16-bit depth map (also drives a "3D preview" in the UI later — out of scope, but the export must exist).
+
+### 7.3 Weighted average — Milestone 3
+
+Softmax blend: `w_i = exp(sharpness_i / T)`, output = Σ wᵢ·pixelᵢ / Σ wᵢ. Temperature **T** (default 0.05, lower = closer to hard max) and sharpness radius. Two-pass streaming (pass 1: per-pixel Σ statistics need all wᵢ — implement as running numerator/denominator accumulation, which *is* single-pass). Halo-resistant, best for smooth/low-detail subjects; slightly soft.
+
+### 7.4 Slabbing — Milestone 3
+
+For deep stacks: split the ordered frames into overlapping sub-stacks ("slabs") of size **N** (default 10, overlap default 2), stack each slab with a chosen inner method (default PMax), then stack the slab results with an outer method (default DMap). Implemented as a composite job reusing the registry; intermediate slabs are cached in the project workspace and inspectable in the UI.
+
+---
+
+## 8. Tiled processing
+
+`tiles.py` provides `process_tiled(fn, images, tile=2048, overlap=128)`: splits work into overlapping tiles, runs `fn` per tile on GPU, blends overlaps with linear feathering. Used automatically when the VRAM estimate fails (§4). Pyramid algorithms set minimum overlap = 2^(pyramid depth) to avoid seam artifacts. Tiled and untiled outputs must agree within `atol=2e-3` (regression test).
+
+---
+
+## 9. Server and API
+
+Single-user local app. `focusstack serve` starts uvicorn on `127.0.0.1:8425` (configurable) and opens the browser. The server only binds localhost; no auth.
+
+**Job model:** one worker thread executes jobs sequentially (GPU is the bottleneck); queue is inspectable and reorderable. Jobs are cancellable between progress steps (the engine checks a `cancel_event` at each frame/stage boundary). Every job emits typed progress events `{job_id, stage, frame_index?, percent, message, level}` over WebSocket `/ws`.
+
+**Projects:** a project is a directory chosen by the user containing `project.json` (frames list, alignment results, job history, retouch sessions, presets used) plus a `cache/` subdir (aligned frames as compressed npy/TIFF, tile pyramids, slab intermediates). Everything is reproducible from sources + project.json; `cache/` is deletable.
+
+**REST endpoints (prefix `/api`):**
+
+| Route | Purpose |
+|---|---|
+| `GET/POST /projects`, `GET/DELETE /projects/{id}` | manage projects (POST takes a directory path) |
+| `POST /projects/{id}/frames/scan` | import frames from a folder path; returns validation report |
+| `GET /fs/list?path=` | server-side folder browser (drives, dirs, image counts) |
+| `POST /projects/{id}/jobs` | enqueue `{type: align|stack|export, params}` |
+| `GET /jobs`, `DELETE /jobs/{id}` | queue state, cancel |
+| `GET /viewer/{image_id}/tile/{z}/{x}/{y}` | 256 px JPEG/WebP tiles from cached pyramids (result, any source frame, depth map, alignment difference) |
+| `POST /retouch/{session_id}/stroke`, `/undo`, `/redo`, `/flatten` | retouching (§11) |
+| `POST /projects/{id}/export` | export with format/naming params |
+| `GET /system` | backend in use, GPU name, VRAM, versions |
+| `GET /algorithms` | registry metadata → UI builds parameter forms |
+| `GET/POST/DELETE /presets` | named parameter sets (global, JSON in user config dir) |
+
+**Batch:** `POST /projects/{id}/frames/auto-group` splits an imported folder into multiple stacks using EXIF timestamp gaps (threshold parameter, default 10 s) and filename patterns; the UI shows proposed groups for confirmation, then "Stack all" enqueues one job per group.
+
+---
+
+## 10. GUI
+
+Dark, dense, professional tool aesthetic (Lightroom/Capture One register: near-black panels, 1 accent color, generous image canvas, every control tooltipped with photographic context). Keyboard-first: shortcuts for zoom (Z = 100%, F = fit), frame stepping (←/→), before/after (\\), brush size ([ ]), undo (Ctrl+Z).
+
+**Screens:**
+
+1. **Project / Import** — open or create project, folder browser, frame filmstrip with thumbnails, validation badges (size/bit-depth mismatch, low alignment score), auto-group review for batch.
+2. **Stack setup** — algorithm picker with parameter forms generated from `/algorithms` metadata, alignment settings, preset save/load, "Stack" + "Stack all groups" buttons. Estimated VRAM/time display.
+3. **Queue / Progress** — job list with per-stage progress bars, live log line, cancel/reorder, history with parameters used (re-run with same/edited params).
+4. **Viewer** — tiled deep-zoom canvas (custom Svelte component consuming `/viewer` tiles; smooth wheel zoom centered on cursor, drag pan, 100% toggle). Compare modes: result ↔ any source frame (synced pan/zoom), result A ↔ result B (two methods side by side), depth-map overlay, alignment difference blink. Histogram + clipping indicators.
+5. **Retouch** — see §11.
+6. **Export** — format, bit depth, compression, quality, naming template with live preview, destination, "also export depth map".
+
+UI state (current project, selections, viewer position) persists across reloads via the project API, not localStorage.
+
+---
+
+## 11. Retouching
+
+Server-side compositing; the UI is a thin client sending strokes and re-fetching invalidated tiles.
+
+- A retouch session targets a stacked result; sources are any aligned frame **or any other stacked result of the same stack** (e.g., paint quiet DMap regions into a crunchy PMax — the classic pro workflow).
+- A **stroke** = `{source_id, points: [(x, y, pressure?)], radius, hardness (0–1), opacity (0–1), mode: normal|erase}` in full-image coordinates. The server rasterizes the stroke mask (Gaussian falloff by hardness), composites source over result at float32, invalidates affected tiles, and responds with the dirty tile list; the viewer refetches only those.
+- **History:** the session stores the ordered stroke list (undo/redo = pointer moves + recomposite of affected region from a periodic checkpoint, every 20 strokes, to keep undo O(affected area), not O(all strokes)). Persisted in project.json — sessions reopen intact.
+- **UI:** left panel lists candidate sources with thumbnails + sharpness-at-cursor hint ("which frame is sharpest under my cursor" indicator, computed from the DMap index map when available); main canvas paints on the result; optional split view showing the source synced; brush preview circle; pressure support via Pointer Events.
+- `flatten` bakes the session into a new named result (the original stack result is never destroyed).
+
+---
+
+## 12. Error handling and robustness rules
+
+- **Validation report** at import: per file → ok / wrong size / wrong bit depth / unreadable / unsupported format. Stacking refuses to start on mixed dimensions; the message names the offending files.
+- Corrupted-mid-job file: skip the frame, emit a warning event, continue; final result notes excluded frames.
+- GPU OOM: tile → CPU fallback chain (§4); user is informed, never crashed.
+- Cancellation leaves the project consistent (cache writes are atomic: write temp + rename).
+- All engine errors surface as typed exceptions (`AlignmentError`, `ValidationError`, `BackendError`); the server maps them to structured JSON errors; the UI shows actionable messages, never a stack trace.
+- Server start with port busy → try next port, print/open correct URL.
+
+---
+
+## 13. Testing
+
+### 13.1 Synthetic stack generator (build first — everything depends on it)
+
+`tests/synthetic/generate.py`: renders a ground-truth scene (textured depth ramp + objects at known depths), simulates a focus stack from it: per-frame depth-dependent Gaussian defocus blur, plus configurable per-frame scale (focus breathing, e.g. 0.2%/frame), translation jitter, rotation jitter, brightness flicker, and noise. Returns frames + ground-truth all-in-focus image + ground-truth depth map + ground-truth transforms.
+
+### 13.2 Required test suites
+
+- **Alignment accuracy:** recovered transforms vs ground truth — scale error < 0.05%, translation < 0.5 px at full res, on synthetic stacks with breathing + jitter.
+- **Stacking quality:** PMax/DMap/weighted result vs ground-truth sharp image — SSIM > 0.97 on synthetic stacks; DMap depth map correlation > 0.95 with ground truth.
+- **CPU/GPU parity:** every backend op and every full algorithm, `atol` as in §4/§8. GPU tests auto-skip without CUDA (CI runs CPU; a local `pytest -m gpu` run covers CUDA before release).
+- **Tiled = untiled** regression (§8).
+- **Golden images:** small real stacks committed to the repo (10 frames, downscaled); results compared by hash-with-tolerance to detect drift.
+- **API tests:** full project lifecycle against a temp dir; job cancellation; retouch undo/redo determinism.
+- **UI:** Playwright smoke — import synthetic stack, run PMax, see viewer tiles, paint one retouch stroke, export, assert output file exists and opens.
+
+---
+
+## 14. Milestones (implement strictly in order)
+
+**M1 — Engine core + PMax + CLI.** Backend abstraction, I/O, synthetic generator, PMax (streaming fold, both backends), tiling, `focusstack stack DIR -o out.tif --method pmax [--cpu]`. ✓ when: 13.2 parity + PMax-quality + tiled tests pass; CLI stacks a real pre-aligned stack.
+
+**M2 — Alignment.** Full §6 pipeline, cache of aligned frames, `--align` CLI flags. ✓ when: alignment accuracy tests pass; a real handheld stack visibly aligns (difference preview).
+
+**M3 — DMap, weighted, slabbing.** Registry metadata complete. ✓ when: quality tests pass for all methods; depth map exports.
+
+**M4 — Server + UI (import → stack → view → export).** Screens 1–4 + 6, jobs/WebSocket, tile viewer, presets, batch auto-group. ✓ when: Playwright smoke (minus retouch) passes; a full stack runs end-to-end from the browser.
+
+**M5 — Retouching.** §11 complete. ✓ when: retouch Playwright + undo/redo determinism tests pass.
+
+**M6 — Polish.** Keyboard shortcuts complete, histogram, compare modes, export naming templates, validation UX, docs (`README` with screenshots, user guide).
+
+Every milestone ends with: all tests green, `ruff` + `mypy` clean, a short demo script/GIF.
+
+---
+
+## 15. Performance targets (RTX 3080, 24 MP frames)
+
+| Operation | Target |
+|---|---|
+| Align 50 frames | < 25 s |
+| PMax 50 frames | < 30 s |
+| DMap 50 frames | < 45 s |
+| Viewer tile response (cached) | < 50 ms |
+| Retouch stroke round-trip | < 150 ms |
+
+CPU fallback has no targets but must complete a 50-frame stack without exceeding 16 GB RAM (streaming design guarantees this).
