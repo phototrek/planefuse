@@ -13,7 +13,7 @@ FocusStack merges a series of photographs taken at different focus distances ("a
 **Core promises:**
 
 1. **Quality** — alignment and stacking results competitive with Zerene Stacker, including handling of focus breathing (scale change between frames), halo control, and full interactive retouching.
-2. **Speed** — CUDA acceleration for every heavy operation; a 50-frame 24 MP stack aligns and stacks (PMax) in under 60 seconds on an RTX 3080-class GPU.
+2. **Speed** — GPU acceleration for every heavy operation: CUDA on NVIDIA (primary), Metal/MPS on Apple M-series. A 50-frame 24 MP stack aligns and stacks (PMax) in under 60 seconds on an RTX 3080-class GPU.
 3. **Robustness** — never crashes on bad input or GPU memory exhaustion; every failure mode degrades gracefully (tiling → CPU fallback → clear error).
 4. **Professional workflow** — 16-bit pipeline end to end, ICC profile and EXIF preservation, batch processing, presets, CLI for automation, full retouching.
 
@@ -25,18 +25,19 @@ FocusStack merges a series of photographs taken at different focus distances ("a
 
 | Layer | Technology |
 |---|---|
-| Processing engine | Python 3.12+, CuPy (CUDA 12.x) with custom `RawKernel`s for hot paths, NumPy CPU fallback |
+| Processing engine | Python 3.12+, **PyTorch 2.x as the single tensor/compute layer** — one implementation, three devices: **CUDA** (NVIDIA, primary), **MPS** (Apple M-series), **CPU** (fallback + CI). Optional CUDA-only custom kernels (CuPy `RawKernel`) may accelerate hot paths, but every op must have a portable torch implementation behind the same interface |
 | Image I/O | `tifffile` (TIFF), `Pillow` (JPEG/PNG), `pyexiv2` (EXIF/XMP/ICC metadata) |
-| Alignment math | `opencv-python-headless` (ECC refinement on downscaled luminance), CuPy FFT (phase correlation), GPU warping via custom kernels |
+| Alignment math | `opencv-python-headless` (ECC refinement on downscaled luminance, CPU), `torch.fft` phase correlation (any device), GPU warping via torch grid ops |
+| Tooling | **uv** for everything Python: a uv workspace (root `pyproject.toml` + committed `uv.lock`) containing both packages; `uv sync`, `uv run pytest`, `uv run ruff`, `uv run mypy`. Never pip/poetry. `npm` for the UI |
 | Server | FastAPI + uvicorn, WebSocket progress streaming |
 | Frontend | Svelte 5 + Vite + TypeScript, no heavyweight UI framework |
-| Packaging | Two Python packages with their own `pyproject.toml`: `focusstack` (engine) and `focusstack-server` (depends on engine, bundles the built UI). The engine CLI's `serve` subcommand lazily imports the server package and prints an install hint if absent. `npm` workspace for UI |
-| Platforms | Windows 11 and Linux. NVIDIA GPU (CUDA 12.x) is the primary target; everything must also run on CPU (NumPy) for machines without CUDA and for CI. |
+| Packaging | Two Python packages with their own `pyproject.toml`, joined as a uv workspace: `focusstack` (engine) and `focusstack-server` (depends on engine, bundles the built UI). The engine CLI's `serve` subcommand lazily imports the server package and prints an install hint if absent. Docker images per §16 |
+| Platforms | Windows 11, Linux, macOS on Apple silicon. NVIDIA GPU (CUDA 12.x) is the primary target; Apple M-series accelerates via MPS; everything must also run on CPU for machines without a GPU and for CI. |
 
 **Hard rules:**
 
 - The engine package (`focusstack.engine`) must have **zero imports from server or UI code**. It is importable and fully usable from a plain Python script.
-- Every algorithm runs identically (within float tolerance) on the CuPy and NumPy backends. The backend is selected at runtime, never at install time.
+- Every algorithm runs identically (within float tolerance) on every device (CUDA, MPS, CPU). The device is selected at runtime, never at install time.
 - All image math is float32 in the source gamma space (see §5 — no linearization anywhere). Integer math only at I/O boundaries.
 - No global mutable state in the engine. A stacking job is a pure function of (frames, parameters) → result.
 
@@ -51,10 +52,10 @@ focus-stacker/
 ├── engine/
 │   ├── pyproject.toml           # package: focusstack
 │   └── src/focusstack/
-│       ├── backend/             # xp abstraction: cupy/numpy, kernel registry, memory pool
-│       │   ├── __init__.py      # get_backend(), Backend protocol
-│       │   ├── cuda.py          # CuPy backend + RawKernel sources
-│       │   ├── cpu.py           # NumPy backend (mirrors cuda.py API exactly)
+│       ├── backend/             # device abstraction over torch, memory budgeting
+│       │   ├── __init__.py      # get_device(), Device info dataclass
+│       │   ├── ops.py           # all image ops, device-agnostic torch (the one true implementation)
+│       │   ├── cuda_fast.py     # OPTIONAL CuPy RawKernel fast paths, same op interface
 │       │   └── kernels/         # .cu kernel source files (loaded as text)
 │       ├── io/                  # load/save, metadata, color profiles
 │       ├── align/               # registration pipeline
@@ -79,33 +80,40 @@ focus-stacker/
 │       ├── lib/viewer/          # tiled deep-zoom viewer component
 │       ├── lib/api.ts           # typed API client
 │       └── lib/stores/          # project, jobs, viewer state
-└── tests/
-    ├── engine/                  # unit + golden tests
-    ├── server/                  # API tests
-    └── synthetic/               # synthetic stack generator (§13.1)
+├── tests/
+│   ├── engine/                  # unit + golden tests
+│   ├── server/                  # API tests
+│   └── synthetic/               # synthetic stack generator (§13.1)
+├── pyproject.toml               # uv workspace root
+├── uv.lock                      # committed
+├── Dockerfile                   # multi-stage, cuda + cpu targets (§16)
+└── docker-compose.yml           # §16
 ```
 
 ---
 
-## 4. Engine: backend abstraction
+## 4. Engine: device abstraction
+
+The engine has **one implementation of every image operation**, written in device-agnostic PyTorch in `backend/ops.py`; the device is a parameter, not a code path.
 
 ```python
-class Backend(Protocol):
-    name: str                    # "cuda" | "cpu"
-    xp: ModuleType               # cupy or numpy
-    def to_device(self, arr: np.ndarray) -> Array: ...
-    def to_host(self, arr: Array) -> np.ndarray: ...
-    def gaussian_blur(self, img, sigma) -> Array: ...
-    def resize(self, img, shape, interp) -> Array: ...
-    def warp(self, img, matrix, out_shape, interp) -> Array: ...   # affine or homography
-    def sharpness_map(self, gray, radius) -> Array: ...            # local Laplacian energy
-    def free_memory(self) -> int: ...                              # bytes available
+def get_device(prefer: str = "auto") -> Device:
+    # "auto": cuda if torch.cuda.is_available(), else mps if torch.backends.mps.is_available(), else cpu.
+    # prefer="cpu"/"cuda"/"mps" forces a device (cpu is used in CI). Choice is logged and in /api/system.
+
+# backend/ops.py — all float32 tensors, NCHW or HW layouts documented per fn:
+def gaussian_blur(img, sigma) -> Tensor        # separable conv2d
+def resize(img, shape, interp) -> Tensor       # F.interpolate
+def warp(img, matrix, out_shape, interp) -> Tensor   # affine_grid/grid_sample; Lanczos-3 = explicit gather + windowed-sinc weights in torch (portable)
+def sharpness_map(gray, radius) -> Tensor      # windowed local Laplacian energy via conv2d
+def fft2 / ifft2 / log_polar_remap(...)        # torch.fft + grid_sample
+def free_memory(device) -> int                 # cuda: torch.cuda.mem_get_info; mps: recommended_max_memory − driver_allocated; cpu: psutil
 ```
 
-- `get_backend(prefer: str = "auto")` returns the CUDA backend if CuPy initializes and a device is present, else CPU. The choice is logged and surfaced in the UI/system API. `prefer="cpu"` forces CPU (used in tests).
-- Custom CUDA kernels (in `backend/kernels/*.cu`, compiled with `cp.RawKernel`): Lanczos-3 warp (affine + homography), windowed Laplacian energy, pyramid coefficient selection (max-energy fold, §7.1), DMap blend. Everything else uses CuPy array ops / `cupyx.scipy.ndimage`.
-- CPU backend implements the same operations with NumPy/SciPy/OpenCV. **Parity requirement:** for every backend operation, a test asserts CPU and GPU outputs agree within `atol=1e-3` on random inputs.
-- **Memory discipline:** before each GPU stage, the engine estimates required VRAM. If the estimate exceeds 80% of free VRAM, it switches that stage to tiled mode (§8). On `cupy.cuda.memory.OutOfMemoryError` despite tiling, it frees the pool and reruns the stage on CPU, emitting a warning event. A job never fails due to OOM.
+- **Optional CUDA fast paths** (`backend/cuda_fast.py`, CuPy `RawKernel`s in `backend/kernels/*.cu`, zero-copy via DLPack): Lanczos-3 warp, pyramid max-energy fold (§7.1), DMap blend. Each registers over the same op interface and is used only when the device is CUDA *and* CuPy imports; the torch implementation is the reference and always exists. A parity test pins each fast path to its torch reference (`atol=1e-3`).
+- **Device parity requirement:** for every op and every full algorithm, tests assert CPU output agrees with each available accelerator (CUDA, MPS) within `atol=1e-3` on random inputs.
+- **MPS specifics:** float32 throughout (already the working format; MPS has no float64). Do **not** set the global `PYTORCH_ENABLE_MPS_FALLBACK`; if an op is missing on MPS, route that op explicitly through a CPU round-trip inside `ops.py` and log it once — deterministic and visible, not silent.
+- **Memory discipline:** before each GPU stage, the engine estimates required device memory. If the estimate exceeds 80% of free memory, it switches that stage to tiled mode (§8). On `torch.cuda.OutOfMemoryError` (or the MPS allocation `RuntimeError`) despite tiling, it empties the cache and reruns the stage on CPU, emitting a warning event. A job never fails due to OOM.
 
 ---
 
@@ -131,11 +139,11 @@ Misaligned frames are the #1 cause of bad stacks. Focus stacks shift mainly by *
 2. **Pairwise estimation, chained:** estimate the transform between each *consecutive* pair (small inter-frame motion → reliable), then compose transforms to map every frame to the reference. Direct-to-reference estimation is wrong here — do not do it.
 3. **Per pair:**
    a. Convert both frames to luminance, downscale so the long edge ≤ 2048 px (configurable 1024–4096).
-   b. **Initial guess, in this order (both on GPU):** first **scale + rotation via log-polar phase correlation** (FFT magnitude spectra are translation-invariant → log-polar remap → phase correlation; scale/rotation read off the peak — this recovers focus breathing directly); then warp one frame by that correction and estimate **translation via phase correlation** (CuPy FFT with Hann window) on the corrected pair. Translation must come second: phase correlation on an uncorrected pair is biased when scale/rotation are present.
+   b. **Initial guess, in this order (both on GPU):** first **scale + rotation via log-polar phase correlation** (FFT magnitude spectra are translation-invariant → log-polar remap → phase correlation; scale/rotation read off the peak — this recovers focus breathing directly); then warp one frame by that correction and estimate **translation via phase correlation** (`torch.fft` with Hann window) on the corrected pair. Translation must come second: phase correlation on an uncorrected pair is biased when scale/rotation are present.
    c. **Refinement:** OpenCV `findTransformECC` with `MOTION_AFFINE`, warm-started from the initial guess, over a 3-level pyramid (ECC at /4, /2, /1 of the downscaled image, each level initializing the next). The resulting affine is then **projected to the nearest similarity transform** (translation + rotation + uniform scale) via orthogonal Procrustes on the 2×2 block — the similarity model is the output; the affine is only an optimization vehicle. (Note: `findTransformECC` has no native similarity model — do not look for one.) Optional `MOTION_HOMOGRAPHY` mode, used as-is without projection, for hand-held stacks (UI toggle: "Perspective alignment").
    d. **Brightness/flicker normalization** (toggle, default on): for metric evaluation, match the pair's luminance mean/std inside the *consecutive pair's* overlap region; the optional gain applied to output frames is computed *relative to the reference frame* (chained gains composed, like the transforms).
 4. **Quality gate:** record final ECC correlation per pair. Pairs below a threshold (default 0.90) are flagged; the UI shows them and offers exclude/keep. CLI flag `--drop-misaligned`. When frame *k* is excluded, the pairwise transform is **re-estimated directly between frames k−1 and k+1** so the chained composition never includes the unreliable link.
-5. **Full-resolution warp on GPU:** scale the estimated similarity/homography to full resolution and warp each frame once with the chosen interpolation — Bilinear / Bicubic / **Lanczos-3 (default)** via the custom kernel. Output canvas = reference frame size; out-of-frame areas filled by edge clamp and recorded in a per-frame validity mask. Stacking honors the mask by excluding invalid pixels from selection: energy forced to −∞ (PMax), sharpness/weight forced to 0 (DMap, weighted). So soft borders, not black edges, appear in results.
+5. **Full-resolution warp on GPU:** scale the estimated similarity/homography to full resolution and warp each frame once with the chosen interpolation — Bilinear / Bicubic / **Lanczos-3 (default)** via the portable Lanczos warp op (optional CUDA fast path, §4). Output canvas = reference frame size; out-of-frame areas filled by edge clamp and recorded in a per-frame validity mask. Stacking honors the mask by excluding invalid pixels from selection: energy forced to −∞ (PMax), sharpness/weight forced to 0 (DMap, weighted). So soft borders, not black edges, appear in results.
 
 **Parameters (all exposed in UI + CLI + presets):** transform model (translation / similarity / perspective — the translation model skips the log-polar stage and uses ECC `MOTION_TRANSLATION`), max alignment resolution, interpolation, brightness normalization on/off, correlation threshold, reference frame.
 
@@ -159,7 +167,7 @@ Operates on low-res luminance proxies of the aligned frames (long edge ≈ 1024 
 
 1. **Grid focus measures:** overlay a cell grid (default 32×48, configurable). Per cell (i,j) and frame p: φᵢⱼ(p) = Σ |−f(x, y−1) + 2·f(x, y) − f(x, y+1)| over the cell (absolute second difference of luminance, the paper's measure), **normalized by the cell's valid-pixel count** (a per-valid-pixel mean, so frames with differing valid support compare fairly). Pixels outside the frame's §6 validity mask are excluded; a cell with > 25% invalid pixels in any frame is treated as unreliable (mirrors the §6 rule that invalid regions never drive selection).
 2. **Curve smoothing:** replace each cell's focus-measure curve (φ across frames) with the sum of its own and its 8 neighbors' curves (fewer at borders) to reduce depth-estimate noise.
-3. **Reliability classification:** compute the **kurtosis** of each smoothed curve — pinned convention: Fisher (excess) kurtosis with the population (biased) estimator, so backends and the threshold agree bit-for-bit; cells below a kurtosis threshold are unreliable (textureless or multi-peaked — blank walls, occlusion boundaries) and are excluded. The paper trained a decision tree on ~60 features and found it collapses to this single kurtosis test, dominating the standard-deviation rule of prior work. The threshold is an advanced parameter; its default is calibrated against the synthetic generator (calibration script lives in the test suite) so that known textureless regions are rejected.
+3. **Reliability classification:** compute the **kurtosis** of each smoothed curve — pinned convention: Fisher (excess) kurtosis with the population (biased) estimator, so devices and the threshold agree bit-for-bit; cells below a kurtosis threshold are unreliable (textureless or multi-peaked — blank walls, occlusion boundaries) and are excluded. The paper trained a decision tree on ~60 features and found it collapses to this single kurtosis test, dominating the standard-deviation rule of prior work. The threshold is an advanced parameter; its default is calibrated against the synthetic generator (calibration script lives in the test suite) so that known textureless regions are rejected.
 4. **Per-cell depth and in-focus interval:** depth = argmax of the smoothed curve. The cell's in-focus interval is the maximal run of consecutive frames around the peak whose smoothed measure ≥ **focus tolerance** × peak (relative threshold, default 0.85, exposed parameter). *Deliberate deviation:* the paper criticizes its predecessor's absolute tolerance and replaces it with depth-of-field equations — which need lens metadata unavailable post-capture — so we use a relative threshold instead, which fixes the same flaw (small-but-distinct peaks) without that metadata.
 5. **Coverage rows + peak-set augmentation:** the set-covering matrix gets one row per reliable cell, with that cell's in-focus interval as its coverage. Then, following the paper's §2.3: let L = the sorted set of distinct reliable-peak frame indices; for each maximal run of consecutive indices in L, add **one synthetic row** for the index immediately before and one for the index immediately after the run (clipped to the valid frame range). *Adaptation detail (the paper derives these rows' coverage from DoF equations, which we don't have):* a synthetic row's interval is the union of the in-focus intervals of all reliable cells peaking at the adjacent run endpoint, shifted by ∓1 — intervals clipped to the frame range likewise; rows whose interval becomes empty are dropped. These extra constraints smooth grid discretization across steep depth changes and may modestly increase the number of frames kept — that is the intent.
 6. **Set covering:** rows as above; columns = frames. Every row's coverage is a contiguous frame interval (consecutive-ones property), so the minimum cover is exact via classic interval stabbing: sort intervals by right endpoint; repeatedly select the right-endpoint frame of the first uncovered interval. O(n log n), no approximation.
@@ -173,7 +181,7 @@ The flagship algorithm, modeled on Zerene PMax.
 1. For each frame: build a Laplacian pyramid (Gaussian σ≈1.0 separable blur, downsample ×2; depth = `floor(log2(min(H,W))) − 5`, i.e. coarsest level ≥ 32 px).
 2. **Streaming fold:** maintain a running "best" pyramid. For each new frame's pyramid, at every level and pixel, compute local energy = |coefficient| smoothed over a 3×3 window; where the new energy exceeds the running best energy, replace coefficient and energy, and record the frame index in a per-level **winner-index map** (uint16). The residual (top) level folds by weighted average with energy-derived weights. This makes memory usage **independent of frame count** — required for 200-frame stacks.
 3. **Halo control (parameter "selection smoothing", 0–3, default 1):** if > 0, apply a (2s+1)×(2s+1) median filter to each level's winner-index map, then run a **second streaming pass** over the frames — recomputing each frame's pyramid on the fly from the cached aligned frames (per-frame pyramids are never stored) — replacing the folded coefficient wherever the filtered winner differs from the original. Only changed pixels are touched. Setting 0 skips the second pass entirely.
-4. Collapse the folded pyramid to the result. Collapse can produce values outside [0, 1]; values are kept unclamped in float32 through post-processing and retouching, and clamped only at the I/O boundary on export (both backends must follow this so exports agree). Document in tooltips that PMax can amplify noise and contrast; that is expected and matches Zerene.
+4. Collapse the folded pyramid to the result. Collapse can produce values outside [0, 1]; values are kept unclamped in float32 through post-processing and retouching, and clamped only at the I/O boundary on export (all devices must follow this so exports agree). Document in tooltips that PMax can amplify noise and contrast; that is expected and matches Zerene.
 
 Outputs: result + per-level selection visualization (debug toggle).
 
@@ -224,7 +232,7 @@ Single-user local app. `focusstack serve` starts uvicorn on `127.0.0.1:8425` (co
 | `GET/POST /projects/{id}/retouch`, `DELETE /retouch/{session_id}` | list/create/delete retouch sessions (POST takes target result `image_id`; the response includes the session's candidate source images **and a working `image_id` for the live composite**, so the viewer can fetch the image being painted through the normal tile route) |
 | `POST /retouch/{session_id}/stroke`, `/undo`, `/redo`, `/flatten` | retouching (§11) |
 | `POST /projects/{id}/export` | enqueues an `export` job (large TIFF writes are not instant) with the source `image_id` (any result, depth map, or flattened retouch) and format/naming params |
-| `GET /system` | backend in use, GPU name, VRAM, versions |
+| `GET /system` | device in use (cuda/mps/cpu), GPU name, VRAM / unified memory, versions |
 | `GET /algorithms` | registry metadata → UI builds parameter forms |
 | `GET/POST/DELETE /presets` | named parameter sets (global, JSON in user config dir) |
 
@@ -283,7 +291,7 @@ Server-side compositing; the UI is a thin client sending strokes and re-fetching
 - **Alignment accuracy:** recovered transforms vs ground truth — scale error < 0.05%, translation < 0.5 px at full res, on synthetic stacks with breathing + jitter.
 - **Stacking quality:** PMax/DMap/weighted result vs ground-truth sharp image — SSIM > 0.97 on synthetic stacks; DMap depth map correlation > 0.95 with ground truth.
 - **Frame selection:** on a synthetic over-sampled stack (e.g., 60 frames where ~12 suffice, derivable from the generator's known per-frame depths of field), every reliable cell's ground-truth depth is in focus in ≥ 1 selected frame, the subset size is ≤ 1.5× the known minimum, and stacking the subset loses < 0.005 SSIM vs stacking all frames. Textureless regions of the synthetic scene must be classified unreliable (kurtosis calibration check).
-- **CPU/GPU parity:** every backend op and every full algorithm, `atol` as in §4/§8. GPU tests auto-skip without CUDA (CI runs CPU; a local `pytest -m gpu` run covers CUDA before release).
+- **Device parity:** every op and every full algorithm, CPU vs each available accelerator, `atol` as in §4/§8. Accelerator tests auto-skip when the device is absent (CI runs CPU; `uv run pytest -m cuda` on an NVIDIA machine and `uv run pytest -m mps` on an Apple-silicon machine cover the accelerators before release). CUDA fast paths additionally pinned to their torch reference (§4).
 - **Tiled = untiled** regression (§8).
 - **Golden images:** small real stacks committed to the repo (10 frames, downscaled); results compared by hash-with-tolerance to detect drift.
 - **API tests:** full project lifecycle against a temp dir; job cancellation; retouch undo/redo determinism.
@@ -293,7 +301,7 @@ Server-side compositing; the UI is a thin client sending strokes and re-fetching
 
 ## 14. Milestones (implement strictly in order)
 
-**M1 — Engine core + PMax + CLI.** Backend abstraction, I/O, synthetic generator, PMax (streaming fold, both backends), tiling, `focusstack stack DIR -o out.tif --method pmax [--cpu]`. ✓ when: 13.2 parity + PMax-quality + tiled tests pass; CLI stacks a real pre-aligned stack.
+**M1 — Engine core + PMax + CLI.** uv workspace, device abstraction, I/O, synthetic generator, PMax (streaming fold, device-agnostic), tiling, `focusstack stack DIR -o out.tif --method pmax [--device cuda|mps|cpu]`. ✓ when: 13.2 parity + PMax-quality + tiled tests pass; CLI stacks a real pre-aligned stack.
 
 **M2 — Alignment.** Full §6 pipeline, cache of aligned frames, `--align` CLI flags. ✓ when: alignment accuracy tests pass; a real handheld stack visibly aligns (difference preview).
 
@@ -303,9 +311,9 @@ Server-side compositing; the UI is a thin client sending strokes and re-fetching
 
 **M5 — Retouching.** §11 complete. ✓ when: retouch Playwright + undo/redo determinism tests pass.
 
-**M6 — Polish.** Keyboard shortcuts complete, histogram, compare modes, export naming templates, validation UX, docs (`README` with screenshots, user guide).
+**M6 — Polish + distribution.** Keyboard shortcuts complete, histogram, compare modes, export naming templates, validation UX, Docker images + compose + CI workflow (§16), docs (`README` with screenshots, user guide, Docker + Apple-silicon install notes).
 
-Every milestone ends with: all tests green, `ruff` + `mypy` clean, a short demo script/GIF.
+Every milestone ends with: all tests green, `uv run ruff check` + `uv run mypy` clean, a short demo script/GIF.
 
 ---
 
@@ -319,4 +327,19 @@ Every milestone ends with: all tests green, `ruff` + `mypy` clean, a short demo 
 | Viewer tile response (cached) | < 50 ms |
 | Retouch stroke round-trip | < 150 ms |
 
-CPU fallback has no targets but must complete a 50-frame stack without exceeding 16 GB RAM (streaming design guarantees this).
+Apple silicon (M3 Pro-class, MPS): indicative target within ~3× of the RTX 3080 numbers — not a gate, but a >10× gap signals an MPS op silently falling back to CPU and must be investigated. CPU has no speed targets but must complete a 50-frame stack without exceeding 16 GB RAM (streaming design guarantees this).
+
+---
+
+## 16. Tooling, Docker, CI
+
+**uv (mandatory for all Python workflows):** the repo root is a uv workspace (`[tool.uv.workspace] members = ["engine", "server"]`) with a single committed `uv.lock`. Setup is `uv sync`; everything runs through `uv run` (`uv run pytest`, `uv run focusstack ...`, `uv run ruff check`, `uv run mypy`). PyTorch installs from the correct index per platform (CUDA wheel on Windows/Linux x86, default wheel with MPS on macOS arm64) via uv's `[tool.uv.sources]` / index configuration — document this in the root pyproject, since it is the one genuinely platform-sensitive dependency. CuPy is an optional extra (`focusstack[cuda-fast]`), never required. README quick start: `uv sync && uv run focusstack serve`.
+
+**Docker:** one multi-stage `Dockerfile` with two final targets:
+
+- `cuda` (default): UI build stage (`node:22-slim`, `npm ci && npm run build`) → runtime on `nvidia/cuda:12.x-runtime-ubuntu24.04` with Python 3.12 + uv (`uv sync --frozen --no-dev`), CUDA torch wheel. Run with `--gpus all` (requires nvidia-container-toolkit).
+- `cpu`: same layout on `python:3.12-slim` with CPU torch — much smaller, used by CI and non-NVIDIA hosts.
+
+`docker-compose.yml` runs the cuda target with `gpus: all`, publishes `8425`, and mounts two volumes: the user's photo directory (read-only) and a projects/cache directory (read-write); the in-container server binds `0.0.0.0` (compose maps it to localhost). Healthcheck: `GET /api/system`. **MPS is not reachable from containers** — Docker on macOS has no GPU passthrough; Apple-silicon users run natively via uv (documented in the README; the cpu image works on macOS but is the slow path).
+
+**CI (GitHub Actions):** on every push — `uv sync --frozen`, ruff, mypy, `uv run pytest` (CPU device), UI `npm ci && npm run build` + typecheck, and a `docker build --target cpu` smoke (build + `/api/system` healthcheck). Accelerator suites (`-m cuda`, `-m mps`) are pre-release manual runs on real hardware, per §13.2.
