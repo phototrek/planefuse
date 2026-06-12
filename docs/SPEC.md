@@ -110,11 +110,11 @@ class Backend(Protocol):
 
 ## 5. Image I/O and color
 
-**Input:** 8/16-bit TIFF (incl. compressed), JPEG, PNG. A stack's frames must share dimensions and bit depth; violations produce a per-file validation report (§12).
+**Input:** 8/16-bit RGB TIFF (incl. compressed), JPEG, PNG. Grayscale input is rejected with a clear validation message (RGB only in v1). A stack's frames must share dimensions and bit depth; violations produce a per-file validation report (§12). **Frame order** within a stack defaults to natural filename sort, with an EXIF capture-time option; the UI allows reversing (DMap depth semantics and slabbing depend on focus order — near-to-far vs far-to-near must be consistent, which is all that matters).
 
 **Working space:** images are decoded to float32 in [0, 1], **keeping the source gamma** (no linearization — stacking sharpness metrics behave better in gamma space, and this matches Zerene/Helicon behavior). The ICC profile bytes of the reference frame are carried through untouched and embedded in the output. No color conversion is ever performed.
 
-**Metadata:** EXIF and XMP are copied from the reference frame to the output via `pyexiv2`, then `Software`, and lens/focus-distance tags that no longer apply are updated/dropped. Add an XMP namespace `focusstack:` recording method, parameter hash, frame count, and app version.
+**Metadata:** EXIF and XMP are copied from the reference frame to the output via `pyexiv2`. Then the `Software` tag is set to `FocusStack <version>`, and tags that no longer apply to a merged image (focus distance, depth-of-field) are dropped. Add an XMP namespace `focusstack:` recording method, parameter hash, frame count, and app version.
 
 **Output:** 16-bit TIFF (default, with chosen compression: none/LZW/ZIP), 8-bit JPEG (quality slider), 16-bit PNG. File naming template with tokens: `{stack_name}`, `{method}`, `{frames}`, `{date}`, `{seq}`. DMap mode can additionally export the depth map as 16-bit grayscale TIFF/PNG.
 
@@ -130,10 +130,10 @@ Misaligned frames are the #1 cause of bad stacks. Focus stacks shift mainly by *
 2. **Pairwise estimation, chained:** estimate the transform between each *consecutive* pair (small inter-frame motion → reliable), then compose transforms to map every frame to the reference. Direct-to-reference estimation is wrong here — do not do it.
 3. **Per pair:**
    a. Convert both frames to luminance, downscale so the long edge ≤ 2048 px (configurable 1024–4096).
-   b. **Initial guess:** translation via phase correlation (CuPy FFT with Hann window), plus **scale + rotation via log-polar phase correlation** (FFT magnitude spectra → log-polar remap → phase correlation; scale/rotation read off the peak). This recovers focus breathing directly. Both on GPU.
+   b. **Initial guess, in this order (both on GPU):** first **scale + rotation via log-polar phase correlation** (FFT magnitude spectra are translation-invariant → log-polar remap → phase correlation; scale/rotation read off the peak — this recovers focus breathing directly); then warp one frame by that correction and estimate **translation via phase correlation** (CuPy FFT with Hann window) on the corrected pair. Translation must come second: phase correlation on an uncorrected pair is biased when scale/rotation are present.
    c. **Refinement:** OpenCV `findTransformECC` with `MOTION_AFFINE`, warm-started from the initial guess, over a 3-level pyramid (ECC at /4, /2, /1 of the downscaled image, each level initializing the next). The resulting affine is then **projected to the nearest similarity transform** (translation + rotation + uniform scale) via orthogonal Procrustes on the 2×2 block — the similarity model is the output; the affine is only an optimization vehicle. (Note: `findTransformECC` has no native similarity model — do not look for one.) Optional `MOTION_HOMOGRAPHY` mode, used as-is without projection, for hand-held stacks (UI toggle: "Perspective alignment").
    d. **Brightness/flicker normalization** (toggle, default on): match each frame's luminance mean/std to the reference inside the overlap region before metric evaluation, and optionally apply the gain to the output frames.
-4. **Quality gate:** record final ECC correlation per pair. Pairs below a threshold (default 0.90) are flagged; the UI shows them and offers exclude/keep. CLI flag `--drop-misaligned`.
+4. **Quality gate:** record final ECC correlation per pair. Pairs below a threshold (default 0.90) are flagged; the UI shows them and offers exclude/keep. CLI flag `--drop-misaligned`. When frame *k* is excluded, the pairwise transform is **re-estimated directly between frames k−1 and k+1** so the chained composition never includes the unreliable link.
 5. **Full-resolution warp on GPU:** scale the estimated similarity/homography to full resolution and warp each frame once with the chosen interpolation — Bilinear / Bicubic / **Lanczos-3 (default)** via the custom kernel. Output canvas = reference frame size; out-of-frame areas filled by edge clamp and recorded in a per-frame validity mask. Stacking honors the mask by excluding invalid pixels from selection: energy forced to −∞ (PMax), sharpness/weight forced to 0 (DMap, weighted). So soft borders, not black edges, appear in results.
 
 **Parameters (all exposed in UI + CLI + presets):** transform model (translation / similarity / perspective), max alignment resolution, interpolation, brightness normalization on/off, correlation threshold, reference frame.
@@ -154,8 +154,8 @@ The flagship algorithm, modeled on Zerene PMax.
 
 1. For each frame: build a Laplacian pyramid (Gaussian σ≈1.0 separable blur, downsample ×2; depth = `floor(log2(min(H,W))) − 5`, i.e. coarsest level ≥ 32 px).
 2. **Streaming fold:** maintain a running "best" pyramid. For each new frame's pyramid, at every level and pixel, compute local energy = |coefficient| smoothed over a 3×3 window; where the new energy exceeds the running best energy, replace coefficient and energy, and record the frame index in a per-level **winner-index map** (uint16). The residual (top) level folds by weighted average with energy-derived weights. This makes memory usage **independent of frame count** — required for 200-frame stacks.
-3. **Halo control (parameter "selection smoothing", 0–3, default 1):** if > 0, apply a (2s+1)×(2s+1) median filter to each level's winner-index map, then run a **second streaming pass** over the cached per-frame pyramids' coefficients, replacing the folded coefficient wherever the filtered winner differs from the original (only the levels' changed pixels are touched; per-frame pyramids are recomputed on the fly from the cached aligned frames, not stored). Setting 0 skips the second pass entirely.
-4. Collapse the folded pyramid to the result. Document in tooltips that PMax can amplify noise and contrast; that is expected and matches Zerene.
+3. **Halo control (parameter "selection smoothing", 0–3, default 1):** if > 0, apply a (2s+1)×(2s+1) median filter to each level's winner-index map, then run a **second streaming pass** over the frames — recomputing each frame's pyramid on the fly from the cached aligned frames (per-frame pyramids are never stored) — replacing the folded coefficient wherever the filtered winner differs from the original. Only changed pixels are touched. Setting 0 skips the second pass entirely.
+4. Collapse the folded pyramid to the result. Collapse can produce values outside [0, 1]; values are kept unclamped in float32 through post-processing and retouching, and clamped only at the I/O boundary on export (both backends must follow this so exports agree). Document in tooltips that PMax can amplify noise and contrast; that is expected and matches Zerene.
 
 Outputs: result + per-level selection visualization (debug toggle).
 
@@ -163,14 +163,14 @@ Outputs: result + per-level selection visualization (debug toggle).
 
 1. Per frame, compute a sharpness map: local Laplacian energy within **estimation radius** (default 8 px, range 2–40).
 2. Streaming fold of `argmax` over frames → integer index map + max-sharpness map.
-3. **Contrast threshold** (default 7%, as fraction of the frame's sharpness histogram): pixels whose max sharpness is below threshold are "undecided".
+3. **Contrast threshold** (default 7%): pixels of the **folded max-sharpness map** whose value falls below its 7th percentile (i.e., the threshold parameter is a percentile of that map's histogram) are "undecided".
 4. Smooth the index map with an edge-aware filter (guided filter, guide = max-sharpness image) with **smoothing radius** (default 16 px). Fill undecided regions by **distance-weighted diffusion from decided neighbors** (iterative masked box blur until converged; do *not* use `cv2.inpaint` — it only accepts 8-bit inputs and the index map is float).
 5. **Second pass** over frames: composite output pixels from the frame each pixel's (smoothed, fractional) index points to, linearly blending between adjacent frames for fractional indices.
 6. Outputs: result + 16-bit depth map (also drives a "3D preview" in the UI later — out of scope, but the export must exist).
 
 ### 7.3 Weighted average — Milestone 3
 
-Softmax blend: `w_i = exp(s_i / T)`, output = Σ wᵢ·pixelᵢ / Σ wᵢ, where `s_i` is the frame's sharpness map **normalized to [0, 1] by the frame's own 99.9th-percentile sharpness** (raw Laplacian energy is unbounded and would overflow `exp`). Temperature **T** (default 0.05, lower = closer to hard max) and sharpness radius are parameters. **Single-pass streaming** using the online-softmax trick: maintain per-pixel running max `m`, numerator, and denominator; when a new frame raises `m`, rescale both accumulators by `exp(m_old − m_new)` — numerically stable at any T. Halo-resistant, best for smooth/low-detail subjects; slightly soft.
+Softmax blend: `w_i = exp(s_i / T)`, output = Σ wᵢ·pixelᵢ / Σ wᵢ, where `s_i` is the frame's sharpness map **normalized by a single stack-global scale: the reference frame's 99.9th-percentile sharpness** (raw Laplacian energy is unbounded and would overflow `exp`; the scale must be global, not per-frame — per-frame normalization would inflate uniformly blurry frames to full weight). Temperature **T** (default 0.05, lower = closer to hard max) and sharpness radius are parameters. **Single-pass streaming** using the online-softmax trick: maintain per-pixel running max `m`, numerator, and denominator; when a new frame raises `m`, rescale both accumulators by `exp(m_old − m_new)` — numerically stable at any T. Halo-resistant, best for smooth/low-detail subjects; slightly soft.
 
 ### 7.4 Slabbing — Milestone 3
 
@@ -200,11 +200,12 @@ Single-user local app. `focusstack serve` starts uvicorn on `127.0.0.1:8425` (co
 | `POST /projects/{id}/frames/scan` | import frames from a folder path; returns validation report |
 | `GET /fs/list?path=` | server-side folder browser (drives, dirs, image counts) |
 | `POST /projects/{id}/jobs` | enqueue `{type: align|stack|export, params}` |
-| `GET /jobs`, `DELETE /jobs/{id}` | queue state, cancel |
+| `GET /jobs`, `DELETE /jobs/{id}`, `POST /jobs/reorder` | queue state, cancel, reorder pending jobs (takes the new ordered id list) |
+| `PATCH /projects/{id}/ui-state` | persist UI state (current screen, selections, viewer position) as an opaque JSON blob in project.json |
 | `GET /viewer/{image_id}/tile/{z}/{x}/{y}` | 256 px JPEG/WebP tiles from cached pyramids. Every viewable image — source frame, aligned frame, stack result, depth map, flattened retouch result — gets a stable `image_id` recorded in project.json when created |
-| `GET/POST /projects/{id}/retouch`, `DELETE /retouch/{session_id}` | list/create/delete retouch sessions (POST takes target result `image_id`; response includes the session's candidate source images) |
+| `GET/POST /projects/{id}/retouch`, `DELETE /retouch/{session_id}` | list/create/delete retouch sessions (POST takes target result `image_id`; the response includes the session's candidate source images **and a working `image_id` for the live composite**, so the viewer can fetch the image being painted through the normal tile route) |
 | `POST /retouch/{session_id}/stroke`, `/undo`, `/redo`, `/flatten` | retouching (§11) |
-| `POST /projects/{id}/export` | enqueues an `export` job (large TIFF writes are not instant) with format/naming params |
+| `POST /projects/{id}/export` | enqueues an `export` job (large TIFF writes are not instant) with the source `image_id` (any result, depth map, or flattened retouch) and format/naming params |
 | `GET /system` | backend in use, GPU name, VRAM, versions |
 | `GET /algorithms` | registry metadata → UI builds parameter forms |
 | `GET/POST/DELETE /presets` | named parameter sets (global, JSON in user config dir) |
