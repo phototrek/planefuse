@@ -29,7 +29,7 @@ class ParamSpec:
 
 @dataclass
 class StackResult:
-    image: np.ndarray                 # float32 (H, W, 3), UNclamped (SPEC §7.1)
+    image: np.ndarray  # float32 (H, W, 3), UNclamped (SPEC §7.1)
     aux: dict[str, np.ndarray] = field(default_factory=dict)
 
 

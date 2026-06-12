@@ -28,7 +28,7 @@ def test_tiff_icc_embedded(tmp_path, img):
 
 def test_unclamped_input_is_clamped_at_export(tmp_path, img):
     hot = img.copy()
-    hot[0, 0] = 1.7   # PMax overshoot (SPEC §7.1: clamp only at I/O boundary)
+    hot[0, 0] = 1.7  # PMax overshoot (SPEC §7.1: clamp only at I/O boundary)
     hot[1, 1] = -0.3
     out = tmp_path / "c.tif"
     save_image(hot, out, bit_depth=16)

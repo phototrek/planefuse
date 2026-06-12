@@ -48,25 +48,18 @@ def stack_frames(
         budget = int(free_memory(device) * 0.8)
         use_tiled = needed > budget
         if use_tiled:
-            log.warning("estimated %d MB > budget %d MB; using tiled mode",
-                        needed >> 20, budget >> 20)
+            log.warning("estimated %d MB > budget %d MB; using tiled mode", needed >> 20, budget >> 20)
 
     def _run(dev: Device, tiled: bool) -> StackResult:
         if tiled:
-            img = stack_tiled(method, source, dev, params, tile=tile,
-                              progress=progress, cancel=cancel)
+            img = stack_tiled(method, source, dev, params, tile=tile, progress=progress, cancel=cancel)
             return StackResult(image=img)
-        return get_algorithm(method).run(source, dev, params,
-                                         progress=progress, cancel=cancel)
+        return get_algorithm(method).run(source, dev, params, progress=progress, cancel=cancel)
 
     def _is_oom(e: Exception) -> bool:
         if isinstance(e, torch.cuda.OutOfMemoryError):
             return True
-        return (
-            device.kind == "mps"
-            and isinstance(e, RuntimeError)
-            and "memory" in str(e).lower()
-        )
+        return device.kind == "mps" and isinstance(e, RuntimeError) and "memory" in str(e).lower()
 
     # SPEC §4 fallback chain: direct -> tiled -> CPU. A job never fails on OOM.
     try:

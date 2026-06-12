@@ -118,8 +118,10 @@ def stack_tiled(
             progress(f"tile {i + 1}/{len(tiles)}", i / len(tiles))
         sub = _RegionSource(source, t)
         sub_masks = _RegionSource(masks, t) if masks is not None else None
-        kwargs = {"masks": sub_masks} if sub_masks is not None else {}
-        res = algo.run(sub, device, params, cancel=cancel, **kwargs)
+        if sub_masks is not None:
+            res = algo.run(sub, device, params, cancel=cancel, masks=sub_masks)  # type: ignore[call-arg]
+        else:
+            res = algo.run(sub, device, params, cancel=cancel)
         fw = _feather(t, h, w, overlap)
         num[t.y0 : t.y1, t.x0 : t.x1] += res.image * fw
         den[t.y0 : t.y1, t.x0 : t.x1] += fw

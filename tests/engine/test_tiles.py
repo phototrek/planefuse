@@ -40,7 +40,5 @@ def test_tiled_matches_untiled():
     tiled = stack_tiled("pmax", src, device, params, tile=96, overlap=48)
     np.testing.assert_allclose(tiled, untiled, atol=2e-3)
     # belt and braces: quality preserved
-    s = structural_similarity(
-        tiled.clip(0, 1), synth.sharp, channel_axis=2, data_range=1.0
-    )
+    s = structural_similarity(tiled.clip(0, 1), synth.sharp, channel_axis=2, data_range=1.0)
     assert s > 0.95

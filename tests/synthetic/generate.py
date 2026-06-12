@@ -20,10 +20,10 @@ from focusstack.backend import get_device, ops
 
 @dataclass
 class SyntheticStack:
-    frames: list[np.ndarray]        # float32 (H, W, 3)
-    sharp: np.ndarray               # ground-truth all-in-focus (H, W, 3)
-    depth: np.ndarray               # ground-truth depth (H, W) in [0, 1]
-    transforms: list[np.ndarray]    # 3x3 ground-truth output->input pixel transforms
+    frames: list[np.ndarray]  # float32 (H, W, 3)
+    sharp: np.ndarray  # ground-truth all-in-focus (H, W, 3)
+    depth: np.ndarray  # ground-truth depth (H, W) in [0, 1]
+    transforms: list[np.ndarray]  # 3x3 ground-truth output->input pixel transforms
 
 
 def make_scene(h: int, w: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
@@ -36,7 +36,7 @@ def make_scene(h: int, w: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
         t = t + amplitude * ops.gaussian_blur(ops.to_tensor(noise.numpy(), dev), sigma)
     t = (t - t.min()) / (t.max() - t.min()) * 0.8 + 0.1
     depth = np.tile(np.linspace(0.0, 1.0, w, dtype=np.float32), (h, 1))
-    depth[h // 6 : h // 3, w // 6 : w // 3] = 0.15      # near plateau
+    depth[h // 6 : h // 3, w // 6 : w // 3] = 0.15  # near plateau
     depth[h // 2 : 5 * h // 6, w // 2 : 5 * w // 6] = 0.85  # far plateau
     return ops.to_numpy(t), depth
 
@@ -106,7 +106,8 @@ def generate_stack(
                 rng.uniform(-rot_jitter, rot_jitter),
                 rng.uniform(-trans_jitter, trans_jitter),
                 rng.uniform(-trans_jitter, trans_jitter),
-                h, w,
+                h,
+                w,
             )
             frame = _apply_affine(frame, m)
         if flicker:

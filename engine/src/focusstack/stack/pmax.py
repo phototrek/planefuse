@@ -31,11 +31,11 @@ _NEG_INF = float("-inf")
 
 @dataclass
 class _FoldState:
-    lap: list[torch.Tensor]       # best coefficients per level (C, h_l, w_l)
-    energy: list[torch.Tensor]    # best energy per level (1, h_l, w_l)
-    winner: list[torch.Tensor]    # winning frame index per level (h_l, w_l) int32
-    res_num: torch.Tensor         # residual weighted sum (C, h_r, w_r)
-    res_den: torch.Tensor         # residual weight sum   (1, h_r, w_r)
+    lap: list[torch.Tensor]  # best coefficients per level (C, h_l, w_l)
+    energy: list[torch.Tensor]  # best energy per level (1, h_l, w_l)
+    winner: list[torch.Tensor]  # winning frame index per level (h_l, w_l) int32
+    res_num: torch.Tensor  # residual weighted sum (C, h_r, w_r)
+    res_den: torch.Tensor  # residual weight sum   (1, h_r, w_r)
 
 
 def _frame_pyramid(
@@ -54,15 +54,11 @@ def _frame_pyramid(
     energies = [ops.local_energy(lvl) for lvl in lap]
     # Residual weight: smoothed magnitude of high-frequency content at coarsest
     # level — frames with more detail there contribute more to the weighted avg.
-    res_weight = (
-        ops.box_filter3((residual - ops.box_filter3(residual)).abs().mean(0, keepdim=True)) + 1e-6
-    )
+    res_weight = ops.box_filter3((residual - ops.box_filter3(residual)).abs().mean(0, keepdim=True)) + 1e-6
     return lap, energies, residual, res_weight
 
 
-def _mask_levels(
-    mask_np: np.ndarray, device: Device, depth: int
-) -> list[torch.Tensor]:
+def _mask_levels(mask_np: np.ndarray, device: Device, depth: int) -> list[torch.Tensor]:
     """Downsample a boolean validity mask through the pyramid levels.
 
     Returns one boolean tensor per Laplacian level (depth tensors) then one for
@@ -141,20 +137,14 @@ class PMax:
             mlv: list[torch.Tensor] | None = None
             if masks is not None:
                 mlv = _mask_levels(masks.read(idx), device, depth)
-                energies = [
-                    e.masked_fill(~m, _NEG_INF)
-                    for e, m in zip(energies, mlv[: depth])
-                ]
+                energies = [e.masked_fill(~m, _NEG_INF) for e, m in zip(energies, mlv[:depth])]
                 res_w = res_w * mlv[depth].to(res_w.dtype)
 
             if state is None:
                 state = _FoldState(
                     lap=lap,
                     energy=energies,
-                    winner=[
-                        torch.zeros(e.shape[-2:], dtype=torch.int32, device=e.device)
-                        for e in energies
-                    ],
+                    winner=[torch.zeros(e.shape[-2:], dtype=torch.int32, device=e.device) for e in energies],
                     res_num=residual * res_w,
                     res_den=res_w.clone(),
                 )
@@ -164,9 +154,7 @@ class PMax:
             for lvl in range(depth):
                 better = energies[lvl] > state.energy[lvl]  # (1, h_l, w_l)
                 state.lap[lvl] = torch.where(better, lap[lvl], state.lap[lvl])
-                state.energy[lvl] = torch.where(
-                    better, energies[lvl], state.energy[lvl]
-                )
+                state.energy[lvl] = torch.where(better, energies[lvl], state.energy[lvl])
                 state.winner[lvl] = torch.where(
                     better.squeeze(0),
                     torch.full_like(state.winner[lvl], idx),
@@ -194,20 +182,14 @@ class PMax:
                 for idx in range(n):
                     _tick(n + idx, f"PMax halo pass {idx + 1}/{n}")
                     lap, _, _, _ = _frame_pyramid(source.read(idx), device, depth)
-                    mlv = (
-                        _mask_levels(masks.read(idx), device, depth)
-                        if masks is not None
-                        else None
-                    )
+                    mlv = _mask_levels(masks.read(idx), device, depth) if masks is not None else None
                     for lvl in range(depth):
                         # Pixels that changed winner to this frame index.
                         sel = changed[lvl] & (filtered[lvl] == idx)
                         if mlv is not None:
                             sel = sel & mlv[lvl].squeeze(0)
                         if sel.any():
-                            state.lap[lvl] = torch.where(
-                                sel.unsqueeze(0), lap[lvl], state.lap[lvl]
-                            )
+                            state.lap[lvl] = torch.where(sel.unsqueeze(0), lap[lvl], state.lap[lvl])
             else:
                 # No pixels actually changed; still update winner for consistency.
                 state.winner = filtered
@@ -224,8 +206,5 @@ class PMax:
 
         return StackResult(
             image=ops.to_numpy(result),
-            aux={
-                f"winner_l{i}": wm.cpu().numpy()
-                for i, wm in enumerate(state.winner)
-            },
+            aux={f"winner_l{i}": wm.cpu().numpy() for i, wm in enumerate(state.winner)},
         )

@@ -35,9 +35,7 @@ def save_image(
         if compression not in _TIFF_COMPRESSION:
             raise ValueError(f"unknown compression {compression!r}")
         extratags = [(_ICC_TAG, 7, len(icc), icc, False)] if icc else []  # type 7 = UNDEFINED
-        tifffile.imwrite(
-            path, data, compression=_TIFF_COMPRESSION[compression], extratags=extratags
-        )
+        tifffile.imwrite(path, data, compression=_TIFF_COMPRESSION[compression], extratags=extratags)
         return
     if suffix in (".jpg", ".jpeg"):
         im = Image.fromarray((clipped * 255.0 + 0.5).astype(np.uint8))

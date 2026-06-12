@@ -22,7 +22,7 @@ _ICC_TAG = 34675
 @dataclass
 class Frame:
     pixels: np.ndarray  # float32 (H, W, 3) in [0, 1]
-    bit_depth: int      # 8 or 16
+    bit_depth: int  # 8 or 16
     icc: bytes | None
     path: Path
 
@@ -30,7 +30,7 @@ class Frame:
 @dataclass
 class FileStatus:
     path: Path
-    status: str   # ok | wrong_size | wrong_bit_depth | unreadable | unsupported | not_rgb
+    status: str  # ok | wrong_size | wrong_bit_depth | unreadable | unsupported | not_rgb
     message: str = ""
 
 
@@ -61,8 +61,9 @@ def load_image(path: Path) -> Frame:
         raise ValidationError(f"{path.name}: unsupported format {suffix}")
     if suffix in (".tif", ".tiff"):
         with tifffile.TiffFile(path) as tf:
-            arr = tf.pages[0].asarray()
-            icc_tag = tf.pages[0].tags.get(_ICC_TAG)
+            page = tf.pages[0]
+            arr = page.asarray()
+            icc_tag = page.tags.get(_ICC_TAG) if isinstance(page, tifffile.TiffPage) else None
             icc = bytes(icc_tag.value) if icc_tag is not None else None
         if arr.ndim != 3 or arr.shape[2] != 3:
             raise ValidationError(f"{path.name}: RGB input required (got shape {arr.shape})")

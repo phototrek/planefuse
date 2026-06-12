@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 
-from focusstack.backend import get_device, ops
 from focusstack.stack.pyramid import build_laplacian, collapse_laplacian, pyramid_depth
 
 

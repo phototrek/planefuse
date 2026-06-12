@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-import torch
 from skimage.metrics import structural_similarity
 
 from focusstack.backend import get_device
@@ -42,13 +41,17 @@ def test_pmax_progress_and_cancel(synth):
     algo = get_algorithm("pmax")
     calls = []
     algo.run(
-        ArrayFrameSource(synth.frames), get_device("cpu"), {"selection_smoothing": 0},
+        ArrayFrameSource(synth.frames),
+        get_device("cpu"),
+        {"selection_smoothing": 0},
         progress=lambda msg, frac: calls.append(frac),
     )
     assert calls and calls[-1] == pytest.approx(1.0)
     with pytest.raises(InterruptedError):
         algo.run(
-            ArrayFrameSource(synth.frames), get_device("cpu"), {"selection_smoothing": 0},
+            ArrayFrameSource(synth.frames),
+            get_device("cpu"),
+            {"selection_smoothing": 0},
             cancel=lambda: True,
         )
 
@@ -58,11 +61,13 @@ def test_pmax_validity_mask_excludes_region(synth):
     frames = [f.copy() for f in synth.frames]
     frames[3][:, :, :] = 5.0  # absurd hot frame; would dominate energy everywhere
     masks = [np.ones(f.shape[:2], dtype=bool) for f in frames]
-    masks[3][:, :] = False    # ...but it is fully invalid
+    masks[3][:, :] = False  # ...but it is fully invalid
     algo = get_algorithm("pmax")
     res = algo.run(
-        ArrayFrameSource(frames), get_device("cpu"),
-        {"selection_smoothing": 0}, masks=ArrayMaskSource(masks),
+        ArrayFrameSource(frames),
+        get_device("cpu"),
+        {"selection_smoothing": 0},
+        masks=ArrayMaskSource(masks),
     )
     assert res.image.max() < 2.0  # the hot frame never selected
 

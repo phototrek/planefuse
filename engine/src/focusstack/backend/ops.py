@@ -55,9 +55,7 @@ def downsample2(img: torch.Tensor) -> torch.Tensor:
 
 def upsample_to(img: torch.Tensor, shape: tuple[int, int]) -> torch.Tensor:
     """Bilinear upsample to an exact (H, W)."""
-    return F.interpolate(
-        img.unsqueeze(0), size=shape, mode="bilinear", align_corners=False
-    ).squeeze(0)
+    return F.interpolate(img.unsqueeze(0), size=shape, mode="bilinear", align_corners=False).squeeze(0)
 
 
 def box_filter3(img: torch.Tensor) -> torch.Tensor:

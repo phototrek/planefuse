@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from focusstack.backend import Device, free_memory, get_device
+from focusstack.backend import free_memory, get_device
 from focusstack.errors import BackendError
 
 

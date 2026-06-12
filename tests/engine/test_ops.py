@@ -67,11 +67,15 @@ def test_median_filter2d_preserves_constant_regions():
 
 # --- device parity (SPEC §13.2): compares each available accelerator to CPU ---
 
-@pytest.mark.parametrize("opname,kwargs", [
-    ("gaussian_blur", {"sigma": 1.5}),
-    ("downsample2", {}),
-    ("box_filter3", {}),
-])
+
+@pytest.mark.parametrize(
+    "opname,kwargs",
+    [
+        ("gaussian_blur", {"sigma": 1.5}),
+        ("downsample2", {}),
+        ("box_filter3", {}),
+    ],
+)
 def test_op_parity(accel_device, opname, kwargs):
     img = _rand_img(h=96, w=112, seed=42)
     fn = getattr(ops, opname)
