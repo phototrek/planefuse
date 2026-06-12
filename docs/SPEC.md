@@ -30,14 +30,14 @@ FocusStack merges a series of photographs taken at different focus distances ("a
 | Alignment math | `opencv-python-headless` (ECC refinement on downscaled luminance), CuPy FFT (phase correlation), GPU warping via custom kernels |
 | Server | FastAPI + uvicorn, WebSocket progress streaming |
 | Frontend | Svelte 5 + Vite + TypeScript, no heavyweight UI framework |
-| Packaging | `pyproject.toml` (engine + server installable as `focusstack`), `npm` workspace for UI |
+| Packaging | Two Python packages with their own `pyproject.toml`: `focusstack` (engine) and `focusstack-server` (depends on engine, bundles the built UI). The engine CLI's `serve` subcommand lazily imports the server package and prints an install hint if absent. `npm` workspace for UI |
 | Platforms | Windows 11 and Linux. NVIDIA GPU (CUDA 12.x) is the primary target; everything must also run on CPU (NumPy) for machines without CUDA and for CI. |
 
 **Hard rules:**
 
 - The engine package (`focusstack.engine`) must have **zero imports from server or UI code**. It is importable and fully usable from a plain Python script.
 - Every algorithm runs identically (within float tolerance) on the CuPy and NumPy backends. The backend is selected at runtime, never at install time.
-- All image math is float32 in linear-light or gamma space as specified per stage (see §5). Integer math only at I/O boundaries.
+- All image math is float32 in the source gamma space (see §5 — no linearization anywhere). Integer math only at I/O boundaries.
 - No global mutable state in the engine. A stacking job is a pure function of (frames, parameters) → result.
 
 ---
@@ -66,6 +66,7 @@ focus-stacker/
 │       ├── project.py           # project file model (JSON on disk)
 │       └── cli.py               # `focusstack` CLI entry point
 ├── server/
+│   ├── pyproject.toml           # package: focusstack-server (depends on focusstack)
 │   └── src/focusstack_server/
 │       ├── main.py              # FastAPI app factory, static UI serving
 │       ├── jobs.py              # job queue, cancellation, progress events
@@ -129,11 +130,11 @@ Misaligned frames are the #1 cause of bad stacks. Focus stacks shift mainly by *
 2. **Pairwise estimation, chained:** estimate the transform between each *consecutive* pair (small inter-frame motion → reliable), then compose transforms to map every frame to the reference. Direct-to-reference estimation is wrong here — do not do it.
 3. **Per pair:**
    a. Convert both frames to luminance, downscale so the long edge ≤ 2048 px (configurable 1024–4096).
-   b. **Initial guess:** translation via phase correlation (CuPy FFT with Hann window) on GPU.
-   c. **Refinement:** OpenCV `findTransformECC` with `MOTION_EUCLIDEAN` + an explicit scale parameter — implement as ECC over a **similarity** model (translation + rotation + uniform scale) using a 3-level pyramid (ECC at /4, /2, /1 of the downscaled image, each initializing the next). Optional `MOTION_HOMOGRAPHY` mode for hand-held stacks (UI toggle: "Perspective alignment").
+   b. **Initial guess:** translation via phase correlation (CuPy FFT with Hann window), plus **scale + rotation via log-polar phase correlation** (FFT magnitude spectra → log-polar remap → phase correlation; scale/rotation read off the peak). This recovers focus breathing directly. Both on GPU.
+   c. **Refinement:** OpenCV `findTransformECC` with `MOTION_AFFINE`, warm-started from the initial guess, over a 3-level pyramid (ECC at /4, /2, /1 of the downscaled image, each level initializing the next). The resulting affine is then **projected to the nearest similarity transform** (translation + rotation + uniform scale) via orthogonal Procrustes on the 2×2 block — the similarity model is the output; the affine is only an optimization vehicle. (Note: `findTransformECC` has no native similarity model — do not look for one.) Optional `MOTION_HOMOGRAPHY` mode, used as-is without projection, for hand-held stacks (UI toggle: "Perspective alignment").
    d. **Brightness/flicker normalization** (toggle, default on): match each frame's luminance mean/std to the reference inside the overlap region before metric evaluation, and optionally apply the gain to the output frames.
 4. **Quality gate:** record final ECC correlation per pair. Pairs below a threshold (default 0.90) are flagged; the UI shows them and offers exclude/keep. CLI flag `--drop-misaligned`.
-5. **Full-resolution warp on GPU:** scale the estimated similarity/homography to full resolution and warp each frame once with the chosen interpolation — Bilinear / Bicubic / **Lanczos-3 (default)** via the custom kernel. Output canvas = reference frame size; out-of-frame areas filled by edge clamp and recorded in a validity mask used by stacking (so soft borders, not black edges, appear in results).
+5. **Full-resolution warp on GPU:** scale the estimated similarity/homography to full resolution and warp each frame once with the chosen interpolation — Bilinear / Bicubic / **Lanczos-3 (default)** via the custom kernel. Output canvas = reference frame size; out-of-frame areas filled by edge clamp and recorded in a per-frame validity mask. Stacking honors the mask by excluding invalid pixels from selection: energy forced to −∞ (PMax), sharpness/weight forced to 0 (DMap, weighted). So soft borders, not black edges, appear in results.
 
 **Parameters (all exposed in UI + CLI + presets):** transform model (translation / similarity / perspective), max alignment resolution, interpolation, brightness normalization on/off, correlation threshold, reference frame.
 
@@ -152,9 +153,9 @@ All algorithms consume: an iterator of aligned float32 frames + validity masks (
 The flagship algorithm, modeled on Zerene PMax.
 
 1. For each frame: build a Laplacian pyramid (Gaussian σ≈1.0 separable blur, downsample ×2; depth = `floor(log2(min(H,W))) − 5`, i.e. coarsest level ≥ 32 px).
-2. **Streaming fold:** maintain a running "best" pyramid. For each new frame's pyramid, at every level and pixel, compute local energy = |coefficient| smoothed over a 3×3 window; where the new energy exceeds the running best energy, replace coefficient and energy. The residual (top) level folds by weighted average with energy-derived weights. This makes memory usage **independent of frame count** — required for 200-frame stacks.
-3. Collapse the folded pyramid to the result.
-4. **Halo control:** after folding, apply a 3×3 majority/median filter to each level's *selection* decisions before final collapse (parameter "selection smoothing", 0–3, default 1). Document in tooltips that PMax can amplify noise and contrast; that is expected and matches Zerene.
+2. **Streaming fold:** maintain a running "best" pyramid. For each new frame's pyramid, at every level and pixel, compute local energy = |coefficient| smoothed over a 3×3 window; where the new energy exceeds the running best energy, replace coefficient and energy, and record the frame index in a per-level **winner-index map** (uint16). The residual (top) level folds by weighted average with energy-derived weights. This makes memory usage **independent of frame count** — required for 200-frame stacks.
+3. **Halo control (parameter "selection smoothing", 0–3, default 1):** if > 0, apply a (2s+1)×(2s+1) median filter to each level's winner-index map, then run a **second streaming pass** over the cached per-frame pyramids' coefficients, replacing the folded coefficient wherever the filtered winner differs from the original (only the levels' changed pixels are touched; per-frame pyramids are recomputed on the fly from the cached aligned frames, not stored). Setting 0 skips the second pass entirely.
+4. Collapse the folded pyramid to the result. Document in tooltips that PMax can amplify noise and contrast; that is expected and matches Zerene.
 
 Outputs: result + per-level selection visualization (debug toggle).
 
@@ -163,13 +164,13 @@ Outputs: result + per-level selection visualization (debug toggle).
 1. Per frame, compute a sharpness map: local Laplacian energy within **estimation radius** (default 8 px, range 2–40).
 2. Streaming fold of `argmax` over frames → integer index map + max-sharpness map.
 3. **Contrast threshold** (default 7%, as fraction of the frame's sharpness histogram): pixels whose max sharpness is below threshold are "undecided".
-4. Smooth the index map with an edge-aware filter (guided filter, guide = max-sharpness image) with **smoothing radius** (default 16 px). Fill undecided regions by inpainting from decided neighbors (cv2.inpaint NS on the index map, or distance-weighted diffusion).
+4. Smooth the index map with an edge-aware filter (guided filter, guide = max-sharpness image) with **smoothing radius** (default 16 px). Fill undecided regions by **distance-weighted diffusion from decided neighbors** (iterative masked box blur until converged; do *not* use `cv2.inpaint` — it only accepts 8-bit inputs and the index map is float).
 5. **Second pass** over frames: composite output pixels from the frame each pixel's (smoothed, fractional) index points to, linearly blending between adjacent frames for fractional indices.
 6. Outputs: result + 16-bit depth map (also drives a "3D preview" in the UI later — out of scope, but the export must exist).
 
 ### 7.3 Weighted average — Milestone 3
 
-Softmax blend: `w_i = exp(sharpness_i / T)`, output = Σ wᵢ·pixelᵢ / Σ wᵢ. Temperature **T** (default 0.05, lower = closer to hard max) and sharpness radius. Two-pass streaming (pass 1: per-pixel Σ statistics need all wᵢ — implement as running numerator/denominator accumulation, which *is* single-pass). Halo-resistant, best for smooth/low-detail subjects; slightly soft.
+Softmax blend: `w_i = exp(s_i / T)`, output = Σ wᵢ·pixelᵢ / Σ wᵢ, where `s_i` is the frame's sharpness map **normalized to [0, 1] by the frame's own 99.9th-percentile sharpness** (raw Laplacian energy is unbounded and would overflow `exp`). Temperature **T** (default 0.05, lower = closer to hard max) and sharpness radius are parameters. **Single-pass streaming** using the online-softmax trick: maintain per-pixel running max `m`, numerator, and denominator; when a new frame raises `m`, rescale both accumulators by `exp(m_old − m_new)` — numerically stable at any T. Halo-resistant, best for smooth/low-detail subjects; slightly soft.
 
 ### 7.4 Slabbing — Milestone 3
 
@@ -195,14 +196,15 @@ Single-user local app. `focusstack serve` starts uvicorn on `127.0.0.1:8425` (co
 
 | Route | Purpose |
 |---|---|
-| `GET/POST /projects`, `GET/DELETE /projects/{id}` | manage projects (POST takes a directory path) |
+| `GET/POST /projects`, `GET/DELETE /projects/{id}` | manage projects (POST takes a directory path; DELETE only unregisters — it never deletes user files or the project directory) |
 | `POST /projects/{id}/frames/scan` | import frames from a folder path; returns validation report |
 | `GET /fs/list?path=` | server-side folder browser (drives, dirs, image counts) |
 | `POST /projects/{id}/jobs` | enqueue `{type: align|stack|export, params}` |
 | `GET /jobs`, `DELETE /jobs/{id}` | queue state, cancel |
-| `GET /viewer/{image_id}/tile/{z}/{x}/{y}` | 256 px JPEG/WebP tiles from cached pyramids (result, any source frame, depth map, alignment difference) |
+| `GET /viewer/{image_id}/tile/{z}/{x}/{y}` | 256 px JPEG/WebP tiles from cached pyramids. Every viewable image — source frame, aligned frame, stack result, depth map, flattened retouch result — gets a stable `image_id` recorded in project.json when created |
+| `GET/POST /projects/{id}/retouch`, `DELETE /retouch/{session_id}` | list/create/delete retouch sessions (POST takes target result `image_id`; response includes the session's candidate source images) |
 | `POST /retouch/{session_id}/stroke`, `/undo`, `/redo`, `/flatten` | retouching (§11) |
-| `POST /projects/{id}/export` | export with format/naming params |
+| `POST /projects/{id}/export` | enqueues an `export` job (large TIFF writes are not instant) with format/naming params |
 | `GET /system` | backend in use, GPU name, VRAM, versions |
 | `GET /algorithms` | registry metadata → UI builds parameter forms |
 | `GET/POST/DELETE /presets` | named parameter sets (global, JSON in user config dir) |
@@ -233,7 +235,7 @@ UI state (current project, selections, viewer position) persists across reloads 
 Server-side compositing; the UI is a thin client sending strokes and re-fetching invalidated tiles.
 
 - A retouch session targets a stacked result; sources are any aligned frame **or any other stacked result of the same stack** (e.g., paint quiet DMap regions into a crunchy PMax — the classic pro workflow).
-- A **stroke** = `{source_id, points: [(x, y, pressure?)], radius, hardness (0–1), opacity (0–1), mode: normal|erase}` in full-image coordinates. The server rasterizes the stroke mask (Gaussian falloff by hardness), composites source over result at float32, invalidates affected tiles, and responds with the dirty tile list; the viewer refetches only those.
+- A **stroke** = `{source_id, points: [(x, y, pressure?)], radius, hardness (0–1), opacity (0–1), mode: normal|erase}` in full-image coordinates. Pressure, when present, multiplies opacity (radius is unaffected — deterministic brush footprint). The server rasterizes the stroke mask (Gaussian falloff by hardness), composites source over result at float32, invalidates affected tiles, and responds with the dirty tile list; the viewer refetches only those.
 - **History:** the session stores the ordered stroke list (undo/redo = pointer moves + recomposite of affected region from a periodic checkpoint, every 20 strokes, to keep undo O(affected area), not O(all strokes)). Persisted in project.json — sessions reopen intact.
 - **UI:** left panel lists candidate sources with thumbnails + sharpness-at-cursor hint ("which frame is sharpest under my cursor" indicator, computed from the DMap index map when available); main canvas paints on the result; optional split view showing the source synced; brush preview circle; pressure support via Pointer Events.
 - `flatten` bakes the session into a new named result (the original stack result is never destroyed).
