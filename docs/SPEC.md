@@ -17,7 +17,7 @@ FocusStack merges a series of photographs taken at different focus distances ("a
 3. **Robustness** — never crashes on bad input or GPU memory exhaustion; every failure mode degrades gracefully (tiling → CPU fallback → clear error).
 4. **Professional workflow** — 16-bit pipeline end to end, ICC profile and EXIF preservation, batch processing, presets, CLI for automation, full retouching.
 
-**Explicit non-goals (do not build):** RAW decoding (input is developed TIFF/JPEG/PNG), exposure/HDR stacking, astro stacking, panorama stitching, cloud processing, mobile support, user accounts.
+**Explicit non-goals (do not build):** RAW decoding (input is developed TIFF/JPEG/PNG), exposure/HDR stacking, astro stacking, panorama stitching, tethered capture / camera control, cloud processing, mobile support, user accounts.
 
 ---
 
@@ -58,6 +58,7 @@ focus-stacker/
 │       │   └── kernels/         # .cu kernel source files (loaded as text)
 │       ├── io/                  # load/save, metadata, color profiles
 │       ├── align/               # registration pipeline
+│       ├── select/              # smart frame selection / stack thinning (§7.0)
 │       ├── stack/               # algorithm registry: pmax.py, dmap.py, weighted.py, slab.py
 │       ├── retouch/             # stroke compositing engine
 │       ├── post/                # halo suppression, contrast, sharpening
@@ -148,6 +149,20 @@ Algorithms register themselves in a registry: `@register("pmax")` with a typed `
 
 All algorithms consume: an iterator of aligned float32 frames + validity masks (frames are **streamed from disk**, never all held in memory), and emit: result image + optional auxiliary outputs (depth map, selection map) + progress callbacks.
 
+### 7.0 Smart frame selection (stack thinning) — optional pre-stacking stage — Milestone 3
+
+Adapted from Choi, Pazylbekova, Zhou & van Beek, *Improved Image Selection for Focus Stacking in Digital Photography* (Univ. of Waterloo, <https://cs.uwaterloo.ca/~vanbeek/Publications/focusStacking.pdf>). The paper describes an end-to-end acquisition system; its acquisition half (live-view lens sweep, tethered capture, depth-of-field equations requiring lens distance markings) is out of scope per §1. This stage applies its **selection algorithm** to an already-captured, aligned stack: pick the minimal subset of frames that still covers everything that is in focus somewhere, so fusion is faster and accumulates less noise — the paper measured up to 10× faster fusion at equal quality on over-sampled stacks. Not a fusion method: it runs before any §7.1–7.4 algorithm, is off by default, and is recommended in the UI when a stack exceeds ~40 frames.
+
+Operates on low-res luminance proxies of the aligned frames (long edge ≈ 1024 px):
+
+1. **Grid focus measures:** overlay a cell grid (default 32×48, configurable). Per cell (i,j) and frame p: φᵢⱼ(p) = Σ |−f(x, y−1) + 2·f(x, y) − f(x, y+1)| over the cell (absolute second difference of luminance, the paper's measure).
+2. **Curve smoothing:** replace each cell's focus-measure curve (φ across frames) with the sum of its own and its 8 neighbors' curves (fewer at borders) to reduce depth-estimate noise.
+3. **Reliability classification:** compute the **kurtosis** of each smoothed curve; cells below a kurtosis threshold are unreliable (textureless or multi-peaked — blank walls, occlusion boundaries) and are excluded. The paper trained a decision tree on ~60 features and found it collapses to this single kurtosis test, dominating the standard-deviation rule of prior work. The threshold is an advanced parameter; its default is calibrated against the synthetic generator (calibration script lives in the test suite) so that known textureless regions are rejected.
+4. **Per-cell depth and in-focus interval:** depth = argmax of the smoothed curve. The cell's in-focus interval is the maximal run of consecutive frames around the peak whose smoothed measure ≥ **focus tolerance** × peak (relative threshold, default 0.85, exposed parameter). *Deliberate deviation:* the paper criticizes its predecessor's absolute tolerance and replaces it with depth-of-field equations — which need lens metadata unavailable post-capture — so we use a relative threshold instead, which fixes the same flaw (small-but-distinct peaks) without that metadata.
+5. **Peak-set augmentation:** let L = frame indices that are reliable peaks. For each maximal run of consecutive indices in L, add the index immediately before and after the run. This smooths grid discretization across steep depth changes (the paper's §2.3).
+6. **Set covering:** rows = the in-focus intervals of cells whose peaks are in augmented L; columns = frames. The intervals give the matrix the consecutive-ones property, so the minimum cover is exact via classic interval stabbing: sort intervals by right endpoint; repeatedly select the right-endpoint frame of the first uncovered interval. O(n log n), no approximation.
+7. **Output:** proposed kept/redundant label per frame + per-cell coverage data. The UI (Stack setup screen) presents the proposal — filmstrip with dropped frames dimmed, coverage grid overlay — for confirmation before stacking; never silently drops frames. CLI: `--select-frames [--focus-tolerance F]`. The selection and its parameters are recorded in project.json and in the stack job's params for reproducibility.
+
 ### 7.1 PMax (Laplacian pyramid, max-energy selection) — Milestone 1
 
 The flagship algorithm, modeled on Zerene PMax.
@@ -221,7 +236,7 @@ Dark, dense, professional tool aesthetic (Lightroom/Capture One register: near-b
 **Screens:**
 
 1. **Project / Import** — open or create project, folder browser, frame filmstrip with thumbnails, validation badges (size/bit-depth mismatch, low alignment score), auto-group review for batch.
-2. **Stack setup** — algorithm picker with parameter forms generated from `/algorithms` metadata, alignment settings, preset save/load, "Stack" + "Stack all groups" buttons. Estimated VRAM/time display.
+2. **Stack setup** — algorithm picker with parameter forms generated from `/algorithms` metadata, alignment settings, smart frame selection toggle (§7.0) with proposal review (dropped frames dimmed in the filmstrip, coverage grid overlay; suggested automatically above ~40 frames), preset save/load, "Stack" + "Stack all groups" buttons. Estimated VRAM/time display.
 3. **Queue / Progress** — job list with per-stage progress bars, live log line, cancel/reorder, history with parameters used (re-run with same/edited params).
 4. **Viewer** — tiled deep-zoom canvas (custom Svelte component consuming `/viewer` tiles; smooth wheel zoom centered on cursor, drag pan, 100% toggle). Compare modes: result ↔ any source frame (synced pan/zoom), result A ↔ result B (two methods side by side), depth-map overlay, alignment difference blink. Histogram + clipping indicators.
 5. **Retouch** — see §11.
@@ -264,6 +279,7 @@ Server-side compositing; the UI is a thin client sending strokes and re-fetching
 
 - **Alignment accuracy:** recovered transforms vs ground truth — scale error < 0.05%, translation < 0.5 px at full res, on synthetic stacks with breathing + jitter.
 - **Stacking quality:** PMax/DMap/weighted result vs ground-truth sharp image — SSIM > 0.97 on synthetic stacks; DMap depth map correlation > 0.95 with ground truth.
+- **Frame selection:** on a synthetic over-sampled stack (e.g., 60 frames where ~12 suffice, derivable from the generator's known per-frame depths of field), every reliable cell's ground-truth depth is in focus in ≥ 1 selected frame, the subset size is ≤ 1.5× the known minimum, and stacking the subset loses < 0.005 SSIM vs stacking all frames. Textureless regions of the synthetic scene must be classified unreliable (kurtosis calibration check).
 - **CPU/GPU parity:** every backend op and every full algorithm, `atol` as in §4/§8. GPU tests auto-skip without CUDA (CI runs CPU; a local `pytest -m gpu` run covers CUDA before release).
 - **Tiled = untiled** regression (§8).
 - **Golden images:** small real stacks committed to the repo (10 frames, downscaled); results compared by hash-with-tolerance to detect drift.
@@ -278,7 +294,7 @@ Server-side compositing; the UI is a thin client sending strokes and re-fetching
 
 **M2 — Alignment.** Full §6 pipeline, cache of aligned frames, `--align` CLI flags. ✓ when: alignment accuracy tests pass; a real handheld stack visibly aligns (difference preview).
 
-**M3 — DMap, weighted, slabbing.** Registry metadata complete. ✓ when: quality tests pass for all methods; depth map exports.
+**M3 — DMap, weighted, slabbing, smart frame selection.** Registry metadata complete; §7.0 selection stage with CLI flags and kurtosis-threshold calibration script. ✓ when: quality tests pass for all methods; depth map exports; frame-selection coverage test passes.
 
 **M4 — Server + UI (import → stack → view → export).** Screens 1–4 + 6, jobs/WebSocket, tile viewer, presets, batch auto-group. ✓ when: Playwright smoke (minus retouch) passes; a full stack runs end-to-end from the browser.
 
