@@ -1,0 +1,50 @@
+"""DMap: depth-map focus stacking (SPEC §7.2).
+
+Streaming argmax of a per-frame sharpness map -> integer index map + max-sharpness
+map; the index map is then contrast-thresholded, edge-aware smoothed, and its
+undecided regions diffusion-filled, before a second streaming pass composites the
+result with fractional-index blending. Memory is O(image), not O(frames).
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import torch
+
+from focusstack.backend import Device, ops
+from focusstack.stack.base import FrameSource
+
+
+def _sharp_of(frame_np: np.ndarray, device: Device, radius: int) -> torch.Tensor:
+    t = ops.to_tensor(frame_np, device)
+    gray = ops.rgb_to_luminance(t)
+    return ops.sharpness_map(gray, radius).squeeze(0)  # (H, W)
+
+
+def dmap_fold(source: FrameSource, device: Device, radius: int,
+              masks: FrameSource | None = None,
+              progress=None, cancel=None) -> tuple[np.ndarray, np.ndarray]:
+    """Streaming argmax fold. Returns (index map int32 (H,W), max-sharpness (H,W) float32)."""
+    n = len(source)
+    best_idx: torch.Tensor | None = None
+    best_sharp: torch.Tensor | None = None
+    for i in range(n):
+        if cancel is not None and cancel():
+            raise InterruptedError("dmap fold cancelled")
+        if progress is not None:
+            progress(f"DMap sharpness {i + 1}/{n}", i / max(2 * n, 1))
+        s = _sharp_of(source.read(i), device, radius)  # (H, W)
+        if masks is not None:
+            m = torch.from_numpy(np.ascontiguousarray(masks.read(i))).to(device.torch_device)
+            # Invalid pixels get -inf so they can never win the argmax, even on a
+            # tie with a valid zero-sharpness (flat) pixel.
+            s = torch.where(m.bool(), s, torch.full_like(s, float("-inf")))
+        if best_idx is None or best_sharp is None:
+            best_idx = torch.zeros(s.shape, dtype=torch.int32, device=s.device)
+            best_sharp = s
+            continue
+        better = s > best_sharp
+        best_idx = torch.where(better, torch.full_like(best_idx, i), best_idx)
+        best_sharp = torch.where(better, s, best_sharp)
+    assert best_idx is not None and best_sharp is not None
+    return best_idx.cpu().numpy(), best_sharp.cpu().numpy()
