@@ -16,8 +16,10 @@ from focusstack.align import AlignParams, align_stack
 from focusstack.backend import Device, empty_cache, free_memory, get_device
 from focusstack.errors import ValidationError
 from focusstack.io import validate_stack
+from focusstack.select import SelectParams, select_frames
 from focusstack.stack import DirFrameSource, StackResult, get_algorithm
 from focusstack.stack.base import FrameSource
+from focusstack.stack.sources import _SubsetSource
 from focusstack.tiles import estimate_stack_bytes, stack_tiled
 
 log = logging.getLogger(__name__)
@@ -33,6 +35,7 @@ def stack_frames(
     tile: int = 2048,
     align: AlignParams | None = None,
     cache_dir: Path | None = None,
+    select: SelectParams | None = None,
     progress=None,
     cancel=None,
 ) -> StackResult:
@@ -47,7 +50,7 @@ def stack_frames(
     device = get_device(device_pref)
 
     source: FrameSource
-    masks = None
+    masks: FrameSource | None = None
     if align is not None:
         cdir = Path(cache_dir) if cache_dir is not None else Path(tempfile.mkdtemp(prefix="fs-align-"))
         areport = align_stack(DirFrameSource(list(paths)), cache_dir=cdir, device=device,
@@ -58,6 +61,17 @@ def stack_frames(
     else:
         source = DirFrameSource(list(paths))
         height, width = report.height, report.width
+
+    if select is not None:
+        sel = select_frames(source, device, select, masks=masks, progress=progress)
+        if progress is not None:
+            msg = f"selected {len(sel.kept)}/{len(source)} frames"
+            if sel.warning:
+                msg += f" ({sel.warning})"
+            progress(msg, 0.0)
+        source = _SubsetSource(source, sel.kept)
+        masks = _SubsetSource(masks, sel.kept) if masks is not None else None
+        height, width = source.read(0).shape[:2]
 
     use_tiled = tile_mode == "always"
     if tile_mode == "auto" and device.kind != "cpu":

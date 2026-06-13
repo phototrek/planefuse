@@ -1,0 +1,14 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-13-m3-smart-frame-selection.md",
+  "tasks": [
+    {"id": 1, "subject": "Task 1: Grid focus measures", "status": "completed"},
+    {"id": 2, "subject": "Task 2: Curve smoothing + kurtosis reliability", "status": "completed", "blockedBy": [1]},
+    {"id": 3, "subject": "Task 3: Per-cell depth + in-focus interval", "status": "completed", "blockedBy": [1]},
+    {"id": 4, "subject": "Task 4: Coverage rows + peak-set augmentation", "status": "completed", "blockedBy": [3]},
+    {"id": 5, "subject": "Task 5: Interval-stabbing set cover + degenerate floor", "status": "completed", "blockedBy": [1]},
+    {"id": 6, "subject": "Task 6: select_frames orchestrator", "status": "completed", "blockedBy": [2, 4, 5]},
+    {"id": 7, "subject": "Task 7: Calibration + coverage/quality tests", "status": "completed", "blockedBy": [6]},
+    {"id": 8, "subject": "Task 8: Pipeline + CLI integration; finish", "status": "completed", "blockedBy": [6, 7]}
+  ],
+  "lastUpdated": "2026-06-13"
+}

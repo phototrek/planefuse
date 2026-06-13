@@ -26,8 +26,15 @@ class SyntheticStack:
     transforms: list[np.ndarray]  # 3x3 ground-truth output->input pixel transforms
 
 
-def make_scene(h: int, w: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
-    """Multi-octave textured image + depth map (ramp with two plateaus)."""
+def make_scene(
+    h: int, w: int, seed: int = 0, flat_region: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
+    """Multi-octave textured image + depth map (ramp with two plateaus).
+
+    When ``flat_region`` is True, the top-left quarter of the image (rows
+    ``0:h//4``, cols ``0:w//4``) is set to a constant 0.5 (textureless) so the
+    kurtosis reliability classifier can be calibrated/tested against it.
+    """
     rng = np.random.default_rng(seed)
     dev = get_device("cpu")
     t = torch.zeros(3, h, w)
@@ -38,7 +45,10 @@ def make_scene(h: int, w: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
     depth = np.tile(np.linspace(0.0, 1.0, w, dtype=np.float32), (h, 1))
     depth[h // 6 : h // 3, w // 6 : w // 3] = 0.15  # near plateau
     depth[h // 2 : 5 * h // 6, w // 2 : 5 * w // 6] = 0.85  # far plateau
-    return ops.to_numpy(t), depth
+    img = ops.to_numpy(t)
+    if flat_region:
+        img[0 : h // 4, 0 : w // 4, :] = 0.5  # textureless corner
+    return img, depth
 
 
 def _apply_affine(img: torch.Tensor, m: np.ndarray) -> torch.Tensor:
@@ -86,9 +96,10 @@ def generate_stack(
     trans_jitter: float = 0.0,
     flicker: float = 0.0,
     noise: float = 0.0,
+    flat_region: bool = False,
 ) -> SyntheticStack:
     rng = np.random.default_rng(seed + 1000)
-    sharp_np, depth = make_scene(h, w, seed)
+    sharp_np, depth = make_scene(h, w, seed, flat_region=flat_region)
     dev = get_device("cpu")
     sharp = ops.to_tensor(sharp_np, dev)
     depth_t = torch.from_numpy(depth)
