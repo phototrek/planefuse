@@ -223,3 +223,70 @@ def log_polar_remap(img: torch.Tensor, n_angles: int, n_radii: int) -> torch.Ten
     grid = torch.stack([gx, gy], dim=-1).unsqueeze(0)  # (1, n_radii, n_angles, 2)
     return F.grid_sample(img.unsqueeze(0), grid, mode="bilinear",
                          padding_mode="zeros", align_corners=True).squeeze(0)
+
+
+# ----------------------------------------------------------------------------
+# Sharpness + edge-aware filtering ops (SPEC §4, §7.2/§7.3).
+# ----------------------------------------------------------------------------
+
+def box_filter(img: torch.Tensor, radius: int) -> torch.Tensor:
+    """(2r+1)x(2r+1) mean filter, reflect-padded. img: (C, H, W). radius 0 = identity."""
+    if radius < 1:
+        return img
+    k = 2 * radius + 1
+    c = img.shape[0]
+    x = img.unsqueeze(0)
+    wx = torch.full((c, 1, 1, k), 1.0 / k, dtype=img.dtype, device=img.device)
+    wy = torch.full((c, 1, k, 1), 1.0 / k, dtype=img.dtype, device=img.device)
+    x = F.pad(x, (radius, radius, 0, 0), mode="reflect")
+    x = F.conv2d(x, wx, groups=c)
+    x = F.pad(x, (0, 0, radius, radius), mode="reflect")
+    x = F.conv2d(x, wy, groups=c)
+    return x.squeeze(0)
+
+
+_LAPLACIAN = torch.tensor([[0.0, 1.0, 0.0], [1.0, -4.0, 1.0], [0.0, 1.0, 0.0]])
+
+
+def sharpness_map(gray: torch.Tensor, radius: int) -> torch.Tensor:
+    """Windowed local Laplacian energy (SPEC §4, §7.2). gray: (1, H, W) -> (1, H, W)."""
+    if gray.shape[0] != 1:
+        raise ValueError(f"sharpness_map expects (1, H, W), got {gray.shape[0]} channels")
+    k = _LAPLACIAN.to(device=gray.device, dtype=gray.dtype).view(1, 1, 3, 3)
+    x = F.pad(gray.unsqueeze(0), (1, 1, 1, 1), mode="reflect")
+    lap = F.conv2d(x, k).squeeze(0)
+    return box_filter(lap * lap, radius)
+
+
+def guided_filter(guide: torch.Tensor, src: torch.Tensor, radius: int, eps: float) -> torch.Tensor:
+    """Edge-aware smoothing of `src` guided by `guide` (He et al. 2010). Both (1, H, W)."""
+    mean_i = box_filter(guide, radius)
+    mean_p = box_filter(src, radius)
+    corr_i = box_filter(guide * guide, radius)
+    corr_ip = box_filter(guide * src, radius)
+    var_i = corr_i - mean_i * mean_i
+    cov_ip = corr_ip - mean_i * mean_p
+    a = cov_ip / (var_i + eps)
+    b = mean_p - a * mean_i
+    mean_a = box_filter(a, radius)
+    mean_b = box_filter(b, radius)
+    return mean_a * guide + mean_b
+
+
+def masked_diffuse(values: torch.Tensor, known: torch.Tensor, radius: int,
+                   iters: int = 50, tol: float = 1e-5) -> torch.Tensor:
+    """Distance-weighted diffusion fill (SPEC §7.2 step 4): fill !known pixels of
+    `values` from known neighbours by iterated masked box blur. values (1,H,W) float;
+    known (1,H,W) bool. Known pixels preserved."""
+    w = known.to(values.dtype)
+    out = values * w
+    for _ in range(iters):
+        num = box_filter(out, radius)
+        den = box_filter(w, radius).clamp_min(1e-8)
+        diffused = num / den
+        new = torch.where(known, values, diffused)
+        if float((new - out).abs().max()) < tol:
+            out = new
+            break
+        out = new
+    return out
