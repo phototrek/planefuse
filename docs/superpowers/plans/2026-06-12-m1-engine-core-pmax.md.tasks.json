@@ -1,19 +1,19 @@
 {
   "planPath": "docs/superpowers/plans/2026-06-12-m1-engine-core-pmax.md",
   "tasks": [
-    {"id": 8, "subject": "Task 1: uv workspace scaffold", "status": "pending"},
-    {"id": 9, "subject": "Task 2: Device abstraction", "status": "pending", "blockedBy": [8]},
-    {"id": 10, "subject": "Task 3: Core image ops", "status": "pending", "blockedBy": [9]},
-    {"id": 11, "subject": "Task 4: Image loading + validation", "status": "pending", "blockedBy": [8]},
-    {"id": 12, "subject": "Task 5: Image writing", "status": "pending", "blockedBy": [11]},
-    {"id": 13, "subject": "Task 6: Synthetic stack generator", "status": "pending", "blockedBy": [10]},
-    {"id": 14, "subject": "Task 7: Laplacian pyramid", "status": "pending", "blockedBy": [10]},
-    {"id": 15, "subject": "Task 8: Algorithm registry + frame sources", "status": "pending", "blockedBy": [11, 12]},
-    {"id": 16, "subject": "Task 9: PMax algorithm", "status": "pending", "blockedBy": [13, 14, 15]},
-    {"id": 17, "subject": "Task 10: Memory estimation + tiled processing", "status": "pending", "blockedBy": [16]},
-    {"id": 18, "subject": "Task 11: Pipeline orchestration", "status": "pending", "blockedBy": [17]},
-    {"id": 19, "subject": "Task 12: CLI", "status": "pending", "blockedBy": [18]},
-    {"id": 20, "subject": "Task 13: M1 acceptance gate", "status": "pending", "blockedBy": [19]}
+    {"id": 8, "subject": "Task 1: uv workspace scaffold", "status": "completed"},
+    {"id": 9, "subject": "Task 2: Device abstraction", "status": "completed", "blockedBy": [8]},
+    {"id": 10, "subject": "Task 3: Core image ops", "status": "completed", "blockedBy": [9]},
+    {"id": 11, "subject": "Task 4: Image loading + validation", "status": "completed", "blockedBy": [8]},
+    {"id": 12, "subject": "Task 5: Image writing", "status": "completed", "blockedBy": [11]},
+    {"id": 13, "subject": "Task 6: Synthetic stack generator", "status": "completed", "blockedBy": [10]},
+    {"id": 14, "subject": "Task 7: Laplacian pyramid", "status": "completed", "blockedBy": [10]},
+    {"id": 15, "subject": "Task 8: Algorithm registry + frame sources", "status": "completed", "blockedBy": [11, 12]},
+    {"id": 16, "subject": "Task 9: PMax algorithm", "status": "completed", "blockedBy": [13, 14, 15]},
+    {"id": 17, "subject": "Task 10: Memory estimation + tiled processing", "status": "completed", "blockedBy": [16]},
+    {"id": 18, "subject": "Task 11: Pipeline orchestration", "status": "completed", "blockedBy": [17]},
+    {"id": 19, "subject": "Task 12: CLI", "status": "completed", "blockedBy": [18]},
+    {"id": 20, "subject": "Task 13: M1 acceptance gate", "status": "completed", "blockedBy": [19]}
   ],
   "lastUpdated": "2026-06-12T00:00:00Z"
 }
