@@ -38,6 +38,8 @@ def stack(
     cache_dir: Path = typer.Option(None, help="Alignment cache directory (default: temp)"),
     tile_size: int = typer.Option(2048, help="Tile size when tiling is needed"),
     jpeg_quality: int = typer.Option(95, min=1, max=100),
+    depth_map: Path = typer.Option(None, "--depth-map",
+                                   help="For dmap: also write the depth map (16-bit grayscale TIFF)"),
 ):
     """Stack pre-aligned frames into a single all-in-focus image."""
     paths: list[Path] = []
@@ -69,12 +71,19 @@ def stack(
             typer.echo(f"  [{frac * 100:5.1f}%] {msg}")
             last["msg"] = msg
 
+    params = {
+        "selection_smoothing": selection_smoothing,
+        "estimation_radius": 8, "contrast_threshold": 7.0, "smoothing_radius": 16,
+        "temperature": 0.05, "sharpness_radius": 8,
+        "slab_size": 10, "slab_overlap": 2, "inner_method": "pmax", "outer_method": "dmap",
+    }
+
     t0 = time.perf_counter()
     try:
         result = stack_frames(
             paths,
             method=method,
-            params={"selection_smoothing": selection_smoothing},
+            params=params,
             device_pref=device,
             tile=tile_size,
             progress=progress,
@@ -89,6 +98,9 @@ def stack(
     depth_out = 16 if output.suffix.lower() in (".tif", ".tiff") else 8
     save_image(result.image, output, bit_depth=depth_out, icc=icc, jpeg_quality=jpeg_quality)
     typer.echo(f"wrote {output} in {time.perf_counter() - t0:.1f}s")
+    if depth_map is not None and "depth" in result.aux:
+        save_image(result.aux["depth"], depth_map, bit_depth=16)
+        typer.echo(f"wrote depth map {depth_map}")
 
 
 @app.command()
