@@ -21,10 +21,34 @@ def save_image(
     compression: str = "zlib",
     jpeg_quality: int = 95,
 ) -> None:
-    """arr: float32 (H, W, 3), possibly outside [0, 1] (clamped here, SPEC §7.1)."""
+    """arr: float32 (H, W, 3) RGB or (H, W) grayscale, possibly outside [0, 1] (clamped here, SPEC §7.1)."""
     path = Path(path)
     clipped = np.clip(arr, 0.0, 1.0)
     suffix = path.suffix.lower()
+
+    # Depth-map / grayscale export: 2-D (H, W) arrays (SPEC §5 DMap depth map).
+    if clipped.ndim == 2:
+        if suffix in (".tif", ".tiff"):
+            if bit_depth == 16:
+                data = (clipped * 65535.0 + 0.5).astype(np.uint16)
+            elif bit_depth == 8:
+                data = (clipped * 255.0 + 0.5).astype(np.uint8)
+            else:
+                raise ValueError(f"unsupported TIFF bit depth {bit_depth}")
+            if compression not in _TIFF_COMPRESSION:
+                raise ValueError(f"unknown compression {compression!r}")
+            tifffile.imwrite(path, data, compression=_TIFF_COMPRESSION[compression])
+            return
+        if suffix == ".png":
+            if bit_depth == 16:
+                data = (clipped * 65535.0 + 0.5).astype(np.uint16)
+                Image.fromarray(data, mode="I;16").save(path)
+            else:
+                Image.fromarray((clipped * 255.0 + 0.5).astype(np.uint8), mode="L").save(path)
+            return
+        raise ValueError(f"grayscale export supports .tif/.png, not {suffix!r}")
+
+    # RGB export: 3-D (H, W, 3) arrays.
     if suffix in (".tif", ".tiff"):
         if bit_depth == 16:
             data = (clipped * 65535.0 + 0.5).astype(np.uint16)
