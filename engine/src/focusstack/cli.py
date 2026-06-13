@@ -36,6 +36,10 @@ def stack(
     reference: int = typer.Option(-1, help="Reference frame index (-1 = middle)"),
     drop_misaligned: bool = typer.Option(False, help="Drop pairs below the quality gate"),
     cache_dir: Path = typer.Option(None, help="Alignment cache directory (default: temp)"),
+    select_frames_flag: bool = typer.Option(False, "--select-frames",
+                                            help="Thin the stack via §7.0 smart frame selection"),
+    focus_tolerance: float = typer.Option(0.85, "--focus-tolerance",
+                                          help="Relative in-focus tolerance for selection"),
     tile_size: int = typer.Option(2048, help="Tile size when tiling is needed"),
     jpeg_quality: int = typer.Option(95, min=1, max=100),
     depth_map: Path = typer.Option(None, "--depth-map",
@@ -64,6 +68,12 @@ def stack(
         )
         typer.echo(f"alignment: model={align_model} max_res={align_max_res}")
 
+    select_params = None
+    if select_frames_flag:
+        from focusstack.select import SelectParams
+        select_params = SelectParams(focus_tolerance=focus_tolerance)
+        typer.echo("frame selection: enabled")
+
     last = {"msg": ""}
 
     def progress(msg: str, frac: float) -> None:
@@ -89,6 +99,7 @@ def stack(
             progress=progress,
             align=align_params,
             cache_dir=cache_dir,
+            select=select_params,
         )
     except FocusStackError as e:
         typer.echo(f"error: {e}", err=True)

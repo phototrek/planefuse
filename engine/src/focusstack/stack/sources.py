@@ -42,3 +42,17 @@ class DirFrameSource:
 
     def read(self, idx: int, region: Region | None = None) -> np.ndarray:
         return _crop(load_image(self.paths[idx]).pixels, region)
+
+
+class _SubsetSource:
+    """Exposes only a subset of another source's frames, re-indexed to 0..k-1."""
+
+    def __init__(self, inner, indices: list[int]):
+        self._inner = inner
+        self._idx = list(indices)
+
+    def __len__(self) -> int:
+        return len(self._idx)
+
+    def read(self, idx: int, region: Region | None = None) -> np.ndarray:
+        return self._inner.read(self._idx[idx], region=region)
