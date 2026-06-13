@@ -26,14 +26,18 @@ def chain_to_reference(n: int, pair_transforms: dict[int, np.ndarray],
     Composing from frame k toward the reference yields the transform mapping the
     reference canvas to frame k's pixels.
     """
+    # warp(img, M)[x] = img(M x), and warp(warp(img, A), B) = warp(img, A @ B)
+    # (A applied first). To align frame k to the reference we apply the pair
+    # transform closest to k first, so each newly added link left-multiplies the
+    # accumulator. Order matters: scale/rotation transforms do not commute.
     matrices: list[np.ndarray] = [np.eye(3) for _ in range(n)]
     acc = np.eye(3)
     for k in range(ref + 1, n):
-        acc = compose(acc, pair_transforms[k - 1])  # ref->...->k
+        acc = compose(pair_transforms[k - 1], acc)  # ref->...->k
         matrices[k] = acc.copy()
     acc = np.eye(3)
     for k in range(ref - 1, -1, -1):
-        acc = compose(acc, invert(pair_transforms[k]))  # ref->...->k
+        acc = compose(invert(pair_transforms[k]), acc)  # ref->...->k
         matrices[k] = acc.copy()
 
     flagged = {i for i, c in correlations.items() if c < threshold}

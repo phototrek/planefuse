@@ -51,6 +51,19 @@ def estimate_pair(frame_a: np.ndarray, frame_b: np.ndarray, device: Device,
     if model == "translation":
         m[:2, :2] = np.eye(2)  # enforce translation model
 
+    # Divergence guard (SPEC §6 quality gate): ECC on a heavily-defocused or
+    # low-texture consecutive pair can diverge to an implausible warp while still
+    # reporting a high correlation. A real focus stack's inter-frame scale change
+    # is sub-percent (focus breathing), so a similarity scale far from 1.0 is
+    # physically impossible — reject it, fall back to the gentler initial guess,
+    # and report zero correlation so the quality gate can flag/drop the pair.
+    sc = float(np.sqrt(abs(np.linalg.det(m[:2, :2]))))
+    if not (0.8 < sc < 1.25):
+        m = init.copy()
+        if model == "translation":
+            m[:2, :2] = np.eye(2)
+        corr = 0.0
+
     gain = 1.0
     if normalize_brightness:
         mask = np.ones((h, w), dtype=bool)

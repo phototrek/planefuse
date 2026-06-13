@@ -17,8 +17,14 @@ def test_stack_with_alignment_recovers_sharp(tmp_path):
         p = src_dir / f"f_{i:03d}.tif"
         save_image(f, p, bit_depth=16)
         paths.append(p)
+    # Anchor alignment on frame 0 so the recovered all-in-focus image shares the
+    # ground-truth sharp's geometry (the generator builds frame 0 at identity).
+    # With the default middle reference the result is correct but rendered in the
+    # middle frame's scaled/translated geometry, which a raw SSIM against the
+    # unwarped sharp would penalize. The accuracy test exercises reference choice
+    # directly by comparing transforms relative to whatever reference is used.
     result = stack_frames(paths, method="pmax", device_pref="cpu",
-                          align=AlignParams(max_long_edge=256),
+                          align=AlignParams(max_long_edge=256, reference=0),
                           cache_dir=tmp_path / "cache")
     s = structural_similarity(np.clip(result.image, 0, 1), stack.sharp.clip(0, 1),
                               channel_axis=2, data_range=1.0)
