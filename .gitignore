@@ -1,1 +1,10 @@
 .worktrees/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+ui/node_modules/
+ui/dist/

@@ -1,0 +1,56 @@
+[project]
+name = "focusstack-dev"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["focusstack"]
+
+[project.optional-dependencies]
+cpu = ["torch>=2.4"]
+cu12x = ["torch>=2.4"]
+
+[tool.uv]
+conflicts = [[{ extra = "cpu" }, { extra = "cu12x" }]]
+
+[tool.uv.sources]
+focusstack = { workspace = true }
+torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu128", extra = "cu12x" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.workspace]
+members = ["engine"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "scikit-image>=0.24",
+  "ruff>=0.8",
+  "mypy>=1.13",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "cuda: tests requiring an NVIDIA GPU",
+  "mps: tests requiring Apple silicon",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
