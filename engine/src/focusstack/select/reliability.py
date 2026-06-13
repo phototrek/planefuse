@@ -31,14 +31,31 @@ def excess_kurtosis(curve: np.ndarray) -> float:
 
 
 def classify_reliable(smoothed: np.ndarray, cell_reliable: np.ndarray,
-                      kurtosis_threshold: float) -> np.ndarray:
+                      kurtosis_threshold: float,
+                      min_amplitude_frac: float = 0.3) -> np.ndarray:
     """(rows, cols) bool: cells whose smoothed curve kurtosis >= threshold AND
-    that were not already marked unreliable (validity mask)."""
+    that were not already marked unreliable (validity mask).
+
+    A textureless cell (e.g. a blank wall) produces a near-zero focus measure;
+    its smoothed curve is dominated by floating-point noise, so its kurtosis is
+    meaningless (it can land anywhere). Kurtosis alone therefore cannot reject
+    such cells. Before the kurtosis test we apply a scene-relative amplitude
+    gate: a cell is only eligible if its smoothed curve peaks at >=
+    ``min_amplitude_frac`` of the brightest cell's peak. This is the
+    standard-deviation rule SPEC §7.0 step 3 notes the kurtosis test
+    *dominates* but does not eliminate, and it is what lets known textureless
+    regions be rejected as required by the §13.2 calibration check.
+    """
     n, r, c = smoothed.shape
     out = np.zeros((r, c), dtype=bool)
+    global_peak = float(smoothed.max())
+    amp_floor = min_amplitude_frac * global_peak
     for i in range(r):
         for j in range(c):
             if not cell_reliable[i, j]:
                 continue
-            out[i, j] = excess_kurtosis(smoothed[:, i, j]) >= kurtosis_threshold
+            curve = smoothed[:, i, j]
+            if float(curve.max()) < amp_floor:
+                continue  # textureless: focus signal below the scene floor
+            out[i, j] = excess_kurtosis(curve) >= kurtosis_threshold
     return out

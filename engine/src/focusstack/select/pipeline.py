@@ -13,9 +13,14 @@ from focusstack.select.intervals import build_rows
 from focusstack.select.reliability import classify_reliable, smooth_curves
 from focusstack.stack.base import FrameSource
 
-# Default kurtosis threshold, calibrated against the synthetic generator
-# (see tests/synthetic/calibrate_kurtosis.py, added in a later task). Cells whose
-# smoothed focus curve has excess kurtosis below this are textureless/multi-peaked.
+# Default kurtosis threshold, calibrated against the synthetic generator (see
+# tests/synthetic/calibrate_kurtosis.py). The synthetic focus curves are broad
+# (platykurtic): excess kurtosis on textured cells runs negative, so the cut
+# sits below 0. Textureless cells are NOT separable by kurtosis alone (their
+# near-zero focus measure makes kurtosis meaningless); they are rejected by the
+# scene-relative amplitude gate in classify_reliable. This threshold therefore
+# only needs to thin textured cells without hitting the floor — -1.2 keeps the
+# 48-frame ramp stack thinning while rejecting the lowest-kurtosis textured cells.
 DEFAULT_KURTOSIS_THRESHOLD = -1.2
 
 
