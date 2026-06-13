@@ -7,6 +7,7 @@ from pathlib import Path
 
 import typer
 
+from focusstack.align import AlignParams
 from focusstack.errors import FocusStackError
 from focusstack.io import load_image, save_image
 from focusstack.pipeline import stack_frames
@@ -24,6 +25,17 @@ def stack(
     method: str = typer.Option("pmax", help=f"Stacking method: {sorted(REGISTRY)}"),
     device: str = typer.Option("auto", help="Compute device: auto|cuda|mps|cpu"),
     selection_smoothing: int = typer.Option(1, min=0, max=3, help="PMax halo control (0=off)"),
+    align: bool = typer.Option(False, "--align/--pre-aligned",
+                               help="Run §6 alignment first (default: frames are pre-aligned)"),
+    align_model: str = typer.Option("similarity", help="Alignment model: translation|similarity"),
+    align_max_res: int = typer.Option(2048, help="Max long edge for alignment estimation"),
+    align_interp: str = typer.Option("bilinear", help="Warp interpolation: bilinear|bicubic"),
+    no_brightness_norm: bool = typer.Option(False, "--no-brightness-norm",
+                                            help="Disable flicker/brightness normalization"),
+    correlation_threshold: float = typer.Option(0.90, help="ECC quality-gate threshold"),
+    reference: int = typer.Option(-1, help="Reference frame index (-1 = middle)"),
+    drop_misaligned: bool = typer.Option(False, help="Drop pairs below the quality gate"),
+    cache_dir: Path = typer.Option(None, help="Alignment cache directory (default: temp)"),
     tile_size: int = typer.Option(2048, help="Tile size when tiling is needed"),
     jpeg_quality: int = typer.Option(95, min=1, max=100),
 ):
@@ -36,6 +48,19 @@ def stack(
         typer.echo(f"error: no input images found in {input_dir}", err=True)
         raise typer.Exit(1)
     typer.echo(f"{len(paths)} frames, method={method}, device={device}")
+
+    align_params = None
+    if align:
+        align_params = AlignParams(
+            model=align_model,
+            max_long_edge=align_max_res,
+            interp=align_interp,
+            normalize_brightness=not no_brightness_norm,
+            correlation_threshold=correlation_threshold,
+            reference=None if reference < 0 else reference,
+            drop_misaligned=drop_misaligned,
+        )
+        typer.echo(f"alignment: model={align_model} max_res={align_max_res}")
 
     last = {"msg": ""}
 
@@ -53,6 +78,8 @@ def stack(
             device_pref=device,
             tile=tile_size,
             progress=progress,
+            align=align_params,
+            cache_dir=cache_dir,
         )
     except FocusStackError as e:
         typer.echo(f"error: {e}", err=True)
