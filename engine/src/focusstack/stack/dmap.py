@@ -48,3 +48,21 @@ def dmap_fold(source: FrameSource, device: Device, radius: int,
         best_sharp = torch.where(better, s, best_sharp)
     assert best_idx is not None and best_sharp is not None
     return best_idx.cpu().numpy(), best_sharp.cpu().numpy()
+
+
+def refine_index(index: np.ndarray, max_sharp: np.ndarray, device: Device,
+                 contrast_percentile: float, smoothing_radius: int) -> np.ndarray:
+    """SPEC §7.2 steps 3-4. index (H,W) int/float, max_sharp (H,W) float ->
+    smoothed fractional index map (H,W) float32 with undecided regions filled."""
+    idx_t = torch.from_numpy(index.astype(np.float32)).unsqueeze(0).to(device.torch_device)
+    sharp_t = torch.from_numpy(max_sharp.astype(np.float32)).unsqueeze(0).to(device.torch_device)
+    thr = float(np.percentile(max_sharp, contrast_percentile))
+    decided = sharp_t > thr
+    guide = sharp_t / (sharp_t.max() + 1e-8)
+    smoothed = ops.guided_filter(guide, idx_t, radius=smoothing_radius, eps=1e-4)
+    if not bool(decided.any()):
+        # Degenerate / uniform contrast: nothing exceeds the threshold, so there is
+        # nothing to diffuse from. Treat the whole map as decided.
+        return smoothed.squeeze(0).cpu().numpy()
+    filled = ops.masked_diffuse(smoothed, decided, radius=max(2, smoothing_radius // 2), iters=64)
+    return filled.squeeze(0).cpu().numpy()

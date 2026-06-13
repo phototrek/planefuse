@@ -278,15 +278,21 @@ def masked_diffuse(values: torch.Tensor, known: torch.Tensor, radius: int,
     """Distance-weighted diffusion fill (SPEC §7.2 step 4): fill !known pixels of
     `values` from known neighbours by iterated masked box blur. values (1,H,W) float;
     known (1,H,W) bool. Known pixels preserved."""
-    w = known.to(values.dtype)
-    out = values * w
+    cov = known.to(values.dtype)
+    out = torch.where(known, values, torch.zeros_like(values))
     for _ in range(iters):
-        num = box_filter(out, radius)
-        den = box_filter(w, radius).clamp_min(1e-8)
-        diffused = num / den
-        new = torch.where(known, values, diffused)
-        if float((new - out).abs().max()) < tol:
-            out = new
+        # Push-pull diffusion: a normalized box blur weighted by coverage. Coverage
+        # is propagated alongside the values so that wide unknown regions fill from
+        # their boundaries inward instead of dividing by a vanishing denominator
+        # (which would otherwise blow up to +/-inf).
+        num = box_filter(out * cov, radius)
+        den = box_filter(cov, radius)
+        reached = den > 1e-6
+        diffused = num / den.clamp_min(1e-8)
+        new = torch.where(known | ~reached, out, diffused)
+        new_cov = torch.where(known, cov, reached.to(values.dtype))
+        delta = float((new - out).abs().max()) if out.numel() else 0.0
+        out, cov = new, new_cov
+        if bool(known.logical_or(reached).all()) and delta < tol:
             break
-        out = new
     return out
