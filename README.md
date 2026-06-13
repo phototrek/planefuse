@@ -11,7 +11,7 @@ See `docs/SPEC.md` for the full specification.
 ## Status
 
 - [x] M1 — engine core, PMax, CLI
-- [ ] M2 — alignment
+- [x] M2 — alignment
 - [ ] M3 — DMap, weighted, slabbing, smart frame selection
 - [ ] M4 — server + web UI
 - [ ] M5 — retouching

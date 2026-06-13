@@ -1,0 +1,20 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-13-m2-alignment.md",
+  "tasks": [
+    {"id": 1, "subject": "Task 1: Add opencv dependency + branch", "status": "completed"},
+    {"id": 2, "subject": "Task 2: Alignment ops in backend/ops.py", "status": "completed", "blockedBy": [1]},
+    {"id": 3, "subject": "Task 3: Transform math (align/transforms.py)", "status": "completed", "blockedBy": [1]},
+    {"id": 4, "subject": "Task 4: Luminance proxy (align/proxy.py)", "status": "completed", "blockedBy": [2]},
+    {"id": 5, "subject": "Task 5: Initial-guess estimators (align/initial.py)", "status": "completed", "blockedBy": [2, 4]},
+    {"id": 6, "subject": "Task 6: ECC refine + brightness (align/refine.py)", "status": "completed", "blockedBy": [3, 4]},
+    {"id": 7, "subject": "Task 7: Single-pair estimator (align/estimate.py)", "status": "completed", "blockedBy": [5, 6]},
+    {"id": 8, "subject": "Task 8: Chain to reference + quality gate (align/chain.py)", "status": "completed", "blockedBy": [3]},
+    {"id": 9, "subject": "Task 9: Full-res warp + validity mask (align/warp.py)", "status": "completed", "blockedBy": [3]},
+    {"id": 10, "subject": "Task 10: Aligned-frame cache (align/cache.py)", "status": "completed", "blockedBy": [9]},
+    {"id": 11, "subject": "Task 11: Alignment orchestrator (align/pipeline.py)", "status": "completed", "blockedBy": [7, 8, 10]},
+    {"id": 12, "subject": "Task 12: Wire alignment into pipeline.stack_frames", "status": "completed", "blockedBy": [11]},
+    {"id": 13, "subject": "Task 13: Alignment accuracy gate (SPEC §13.2)", "status": "completed", "blockedBy": [11]},
+    {"id": 14, "subject": "Task 14: CLI --align flags + finish", "status": "completed", "blockedBy": [12, 13]}
+  ],
+  "lastUpdated": "2026-06-13"
+}

@@ -6,15 +6,18 @@ M1 scope: alignment is M2; frames are assumed pre-aligned here.
 from __future__ import annotations
 
 import logging
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import torch
 
+from focusstack.align import AlignParams, align_stack
 from focusstack.backend import Device, empty_cache, free_memory, get_device
 from focusstack.errors import ValidationError
 from focusstack.io import validate_stack
 from focusstack.stack import DirFrameSource, StackResult, get_algorithm
+from focusstack.stack.base import FrameSource
 from focusstack.tiles import estimate_stack_bytes, stack_tiled
 
 log = logging.getLogger(__name__)
@@ -28,6 +31,8 @@ def stack_frames(
     device_pref: str = "auto",
     tile_mode: str = "auto",  # auto | always | never
     tile: int = 2048,
+    align: AlignParams | None = None,
+    cache_dir: Path | None = None,
     progress=None,
     cancel=None,
 ) -> StackResult:
@@ -40,11 +45,23 @@ def stack_frames(
         raise ValidationError("a stack needs at least 2 frames")
 
     device = get_device(device_pref)
-    source = DirFrameSource(list(paths))
+
+    source: FrameSource
+    masks = None
+    if align is not None:
+        cdir = Path(cache_dir) if cache_dir is not None else Path(tempfile.mkdtemp(prefix="fs-align-"))
+        areport = align_stack(DirFrameSource(list(paths)), cache_dir=cdir, device=device,
+                              params=align, progress=progress, cancel=cancel)
+        source = areport.cache.frame_source()
+        masks = areport.cache.mask_source()
+        height, width = source.read(0).shape[:2]
+    else:
+        source = DirFrameSource(list(paths))
+        height, width = report.height, report.width
 
     use_tiled = tile_mode == "always"
     if tile_mode == "auto" and device.kind != "cpu":
-        needed = estimate_stack_bytes(report.height, report.width)
+        needed = estimate_stack_bytes(height, width)
         budget = int(free_memory(device) * 0.8)
         use_tiled = needed > budget
         if use_tiled:
@@ -52,9 +69,13 @@ def stack_frames(
 
     def _run(dev: Device, tiled: bool) -> StackResult:
         if tiled:
-            img = stack_tiled(method, source, dev, params, tile=tile, progress=progress, cancel=cancel)
+            img = stack_tiled(method, source, dev, params, tile=tile,
+                              progress=progress, cancel=cancel, masks=masks)
             return StackResult(image=img)
-        return get_algorithm(method).run(source, dev, params, progress=progress, cancel=cancel)
+        algo = get_algorithm(method)
+        if masks is not None:
+            return algo.run(source, dev, params, progress=progress, cancel=cancel, masks=masks)  # type: ignore[call-arg]
+        return algo.run(source, dev, params, progress=progress, cancel=cancel)
 
     def _is_oom(e: Exception) -> bool:
         if isinstance(e, torch.cuda.OutOfMemoryError):
