@@ -385,6 +385,7 @@ source = { editable = "server" }
 dependencies = [
     { name = "fastapi" },
     { name = "focusstack" },
+    { name = "pillow" },
     { name = "platformdirs" },
     { name = "uvicorn" },
     { name = "websockets" },
@@ -394,6 +395,7 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "focusstack", editable = "engine" },
+    { name = "pillow", specifier = ">=10.0" },
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "uvicorn", specifier = ">=0.30" },
     { name = "websockets", specifier = ">=13" },
