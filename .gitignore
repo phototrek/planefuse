@@ -8,3 +8,8 @@ __pycache__/
 dist/
 ui/node_modules/
 ui/dist/
+ui/.svelte-kit/
+ui/test-results/
+ui/playwright-report/
+# Built UI bundle (produced by `npm run build` in ui/)
+server/src/focusstack_server/static/
