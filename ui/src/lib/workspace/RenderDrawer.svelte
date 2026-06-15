@@ -31,21 +31,40 @@
     }
   }
 
-  // Lazily register result thumbnails.
-  async function ensureThumb(resultId: string) {
-    const result = appState.results.find((r) => r.id === resultId);
-    if (!result || result.thumb || !appState.project) return;
+  // Lazily register thumbnails sequentially to avoid concurrent server saves.
+  let thumbQueueRunning = false;
+
+  async function drainThumbQueue() {
+    if (thumbQueueRunning) return;
+    thumbQueueRunning = true;
     try {
-      const reg = await api.registerView(appState.project.id, result.path);
-      result.imageId = reg.image_id;
-      result.levels = reg.levels;
-      result.width = reg.width;
-      result.height = reg.height;
-      result.thumb = api.tileUrl(reg.image_id, 0, 0, 0);
-    } catch {
-      // Non-fatal: thumb just stays missing.
+      for (const result of appState.results) {
+        if (!result.thumb && appState.project) {
+          try {
+            const projectId = appState.project.id;
+            const reg = await api.registerView(projectId, result.path);
+            result.imageId = reg.image_id;
+            result.levels = reg.levels;
+            result.width = reg.width;
+            result.height = reg.height;
+            result.thumb = api.tileUrl(reg.image_id, 0, 0, 0);
+          } catch {
+            // Non-fatal: thumb stays missing.
+          }
+        }
+      }
+    } finally {
+      thumbQueueRunning = false;
     }
   }
+
+  // When new results arrive, drain the thumb queue.
+  $effect(() => {
+    const hasUnregistered = appState.results.some((r) => !r.thumb);
+    if (hasUnregistered && appState.project) {
+      void drainThumbQueue();
+    }
+  });
 
   let activeJobs = $derived(
     Object.values(appState.jobs).filter((j) => ACTIVE.has(j.status))
@@ -84,7 +103,6 @@
     <div class="drawer-content">
       <!-- Result thumbnails -->
       {#each appState.results as result (result.id)}
-        {void ensureThumb(result.id)}
         <div
           class="result-chip"
           class:active={appState.viewer?.kind === 'result' && (appState.viewer?.id === result.id)}

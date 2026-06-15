@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api } from '$lib/api';
+  import { api, type ScanReport } from '$lib/api';
   import { appState } from '$lib/stores.svelte';
   import FolderBrowser from '$lib/components/FolderBrowser.svelte';
 
@@ -8,6 +8,7 @@
   let selectedFiles = $state<string[]>([]);
   let busy = $state(false);
   let error = $state('');
+  let lastReport = $state<ScanReport | null>(null);
 
   async function confirm() {
     if (!appState.project) return;
@@ -17,6 +18,7 @@
       const paths = selectedFiles.length > 0 ? selectedFiles : [folder];
       const report = await api.addFrames(appState.project.id, paths);
       appState.inputs = report.files;
+      lastReport = report;
       appState.project = await api.getProject(appState.project.id);
       // Auto-select the first input into the viewer on first add.
       if (report.files.length > 0 && appState.viewer === null) {
@@ -90,6 +92,18 @@
 
   {#if !showAdd && error}
     <p class="err mono">{error}</p>
+  {/if}
+
+  {#if lastReport && appState.inputs.length > 0}
+    <div class="report-row">
+      <span
+        class="scan-status"
+        class:ok={lastReport.ok}
+      >{lastReport.ok ? '✓' : '✗'}</span>
+      <span class="report-info mono faint">
+        {appState.inputs.length} frames{lastReport.width && lastReport.height ? ` · ${lastReport.width}×${lastReport.height}` : ''}{lastReport.bit_depth ? ` · ${lastReport.bit_depth}-bit` : ''}
+      </span>
+    </div>
   {/if}
 
   <div class="frames">
@@ -192,4 +206,8 @@
   .frame-row:hover .remove-btn { opacity: 1; }
   .empty { padding: 16px 12px; font-size: 12px; }
   .err { color: var(--bad); font-size: 12px; margin: 0; }
+  .report-row { display: flex; align-items: center; gap: 8px; padding: 4px 12px; flex-shrink: 0; }
+  .scan-status { font-weight: 600; color: var(--bad); font-size: 12px; }
+  .scan-status.ok { color: var(--good); }
+  .report-info { font-size: 11px; }
 </style>

@@ -331,7 +331,23 @@
   </div>
 </div>
 
-<!-- Options panel (full-width, below toolbar) -->
+<!-- Always-visible align + select toggles (below toolbar) -->
+<div class="align-row">
+  <label class="toggle">
+    <input type="checkbox" bind:checked={useAlign} />
+    <span>Align frames</span>
+    {#if useAlign}
+      <span class="faint mono">max long edge</span>
+      <input class="num" type="number" bind:value={maxLongEdge} min="128" max="8192" step="1" />
+    {/if}
+  </label>
+  <label class="toggle">
+    <input type="checkbox" bind:checked={useSelect} />
+    <span>Smart frame selection</span>
+  </label>
+</div>
+
+<!-- Options panel (full-width, below align row) -->
 {#if showOptions}
   <div class="options-panel panel">
     {#if current}
@@ -340,21 +356,6 @@
         <ParamForm specs={current.params} bind:values />
       </div>
     {/if}
-
-    <div class="align-section">
-      <label class="toggle">
-        <input type="checkbox" bind:checked={useAlign} />
-        <span>Align frames</span>
-        {#if useAlign}
-          <span class="faint mono">max long edge</span>
-          <input class="num" type="number" bind:value={maxLongEdge} min="128" max="8192" step="1" />
-        {/if}
-      </label>
-      <label class="toggle">
-        <input type="checkbox" bind:checked={useSelect} />
-        <span>Smart frame selection</span>
-      </label>
-    </div>
 
     <div class="presets-section">
       <p class="eyebrow">Presets</p>
@@ -441,6 +442,15 @@
   .dest-input { width: 100%; font-family: var(--font-mono); font-size: 11px; }
   .export-actions { display: flex; justify-content: flex-end; }
   .lbl { font-size: 12px; color: var(--text-dim); }
+  .align-row {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 4px 12px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    flex-shrink: 0;
+  }
   .options-panel {
     padding: 14px 16px;
     display: flex;
@@ -448,7 +458,7 @@
     flex-wrap: wrap;
     border-top: 1px solid var(--line);
   }
-  .params-section, .align-section, .presets-section { display: flex; flex-direction: column; gap: 10px; min-width: 200px; }
+  .params-section, .presets-section { display: flex; flex-direction: column; gap: 10px; min-width: 200px; }
   .toggle { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
   .toggle input[type='checkbox'] { width: 14px; height: 14px; accent-color: var(--accent); }
   .num { width: 80px; }

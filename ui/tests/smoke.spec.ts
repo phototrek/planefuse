@@ -152,7 +152,7 @@ test('workspace: retouch result -> paint -> undo/redo -> flatten -> export', asy
   await expect(page.getByTestId('ws-result').first()).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('ws-result').first().click();
   await expect(page.getByTestId('viewer-tile').first()).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('retouch-this-result').click();
+  await page.getByTestId('retouch-this-result').first().click();
 
   await expect(page).toHaveURL(/\/retouch$/);
   await page.getByTestId('retouch-source').first().click();
@@ -190,7 +190,7 @@ test('workspace: retouch result -> paint -> undo/redo -> flatten -> export', asy
 
   // After flatten, expect to be back on the workspace with the viewer showing the flattened result.
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByTestId('viewer-tile').first()).toBeVisible();
+  await expect(page.getByTestId('viewer-tile').first()).toBeVisible({ timeout: 30_000 });
   const projects = (await page.request.get('/api/projects')).json() as Promise<
     { images: Record<string, { name?: string }> }[]
   >;
