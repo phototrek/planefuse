@@ -67,6 +67,7 @@
         class:active={$page.url.pathname === item.href}
         href={item.href}
         title="{item.label} (press {item.key})"
+        data-testid="nav-{item.label.toLowerCase()}"
       >
         <span class="ico ico-{item.icon}" aria-hidden="true"></span>
         <span class="nlabel">{item.label}</span>
