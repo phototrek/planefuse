@@ -49,6 +49,17 @@
       /* already finished */
     }
   }
+
+  const DONE = new Set(['done', 'error', 'cancelled']);
+
+  async function rerun(job: Job) {
+    if (!appState.project) return;
+    try {
+      await api.enqueueJob(appState.project.id, job.type, job.params ?? {});
+    } catch {
+      /* surfaced on the job itself */
+    }
+  }
 </script>
 
 <div class="screen">
@@ -71,6 +82,8 @@
             </span>
             {#if j.status === 'pending' || j.status === 'running'}
               <button class="ghost" onclick={() => cancel(j.id)}>Cancel</button>
+            {:else if DONE.has(j.status) && appState.project}
+              <button class="ghost" data-testid="rerun" onclick={() => rerun(j)} title="Re-run with the same parameters">↻ Re-run</button>
             {/if}
           </div>
           <ProgressBar percent={j.percent} status={j.status} />

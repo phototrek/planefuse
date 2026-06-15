@@ -39,7 +39,8 @@ export function connectJobs(): void {
       percent: e.percent ?? prev?.percent ?? 0,
       message: e.message ?? prev?.message ?? '',
       result: prev?.result ?? null,
-      error: prev?.error ?? ''
+      error: prev?.error ?? '',
+      params: prev?.params ?? {}
     };
     appState.jobs[e.job_id] = merged;
   };

@@ -15,7 +15,8 @@ from focusstack_server.projects import Project, ProjectStore
 
 
 def make_stack_runner(store: ProjectStore, proj: Project, params: dict[str, Any]) -> Callable:
-    paths = [Path(p) for p in proj.frames]
+    # An explicit frame list (e.g. a batch group) overrides the project's frames.
+    paths = [Path(p) for p in (params.get("frames") or proj.frames)]
     method = params.get("method", "pmax")
     device = params.get("device", "auto")
     align = AlignParams(**params["align"]) if params.get("align") else None
