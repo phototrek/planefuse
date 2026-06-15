@@ -31,7 +31,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
 CMD ["uv", "run", "--frozen", "--no-dev", "--extra", "cpu", "focusstack", "serve"]
 
 # --- CUDA target: runtime on nvidia/cuda; uv manages Python 3.12 ---
-FROM nvidia/cuda:12.4.1-runtime-ubuntu24.04 AS cuda
+# CUDA 12.8 runtime to match the cu128 torch wheels pinned in pyproject.toml.
+FROM nvidia/cuda:12.8.1-runtime-ubuntu24.04 AS cuda
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1 UV_HTTP_TIMEOUT=300 UV_PYTHON_INSTALL_DIR=/opt/uv-python
 WORKDIR /app
