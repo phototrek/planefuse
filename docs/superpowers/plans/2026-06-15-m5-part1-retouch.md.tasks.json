@@ -5,7 +5,7 @@
     {"id": 2, "subject": "Task 2: RetouchSession apply, undo, redo, and checkpoints", "status": "completed", "blockedBy": [1]},
     {"id": 3, "subject": "Task 3: Partial tile rebuild_region", "status": "completed"},
     {"id": 4, "subject": "Task 4: Project retouch persistence + RetouchManager", "status": "completed", "blockedBy": [2, 3]},
-    {"id": 5, "subject": "Task 5: Retouch routes, app wiring, export guard, and finish", "status": "pending", "blockedBy": [4]}
+    {"id": 5, "subject": "Task 5: Retouch routes, app wiring, export guard, and finish", "status": "completed", "blockedBy": [4]}
   ],
   "lastUpdated": "2026-06-15"
 }

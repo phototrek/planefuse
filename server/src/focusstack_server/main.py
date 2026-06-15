@@ -10,8 +10,9 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 
-from focusstack_server.api import frames, fs, jobs, presets, projects, system, viewer
+from focusstack_server.api import frames, fs, jobs, presets, projects, retouch, system, viewer
 from focusstack_server.jobs import JobQueue
+from focusstack_server.retouch import RetouchManager
 from focusstack_server.ws import WsHub
 
 log = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ def create_app(data_dir: Path) -> FastAPI:
     app.state.ws = hub
     # App-scoped job queue; progress events fan out over the WebSocket hub.
     app.state.jobs = JobQueue(on_event=hub.publish)
+    app.state.retouch = RetouchManager(data_dir)
     app.include_router(system.router)
     app.include_router(fs.router)
     app.include_router(projects.router)
@@ -37,6 +39,7 @@ def create_app(data_dir: Path) -> FastAPI:
     app.include_router(jobs.router)
     app.include_router(viewer.router)
     app.include_router(presets.router)
+    app.include_router(retouch.router)
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
