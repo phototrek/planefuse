@@ -1,11 +1,11 @@
 {
   "planPath": "docs/superpowers/plans/2026-06-15-workspace-part1-backend.md",
   "tasks": [
-    {"id": 1, "subject": "Task 1: Scratch project create (empty path) + unsaved default", "status": "pending"},
-    {"id": 2, "subject": "Task 2: Save/rename PATCH /projects/{id}", "status": "pending", "blockedBy": [1]},
-    {"id": 3, "subject": "Task 3: Additive frames add/remove + shared report helper", "status": "pending", "blockedBy": [1]},
-    {"id": 4, "subject": "Task 4: Prune stale unsaved scratch projects on startup", "status": "pending", "blockedBy": [1, 2]},
-    {"id": 5, "subject": "Task 5: Full backend gate (pytest/ruff/mypy)", "status": "pending", "blockedBy": [1, 2, 3, 4]}
+    {"id": 1, "subject": "Task 1: Scratch project create (empty path) + unsaved default", "status": "completed"},
+    {"id": 2, "subject": "Task 2: Save/rename PATCH /projects/{id}", "status": "completed", "blockedBy": [1]},
+    {"id": 3, "subject": "Task 3: Additive frames add/remove + shared report helper", "status": "completed", "blockedBy": [1]},
+    {"id": 4, "subject": "Task 4: Prune stale unsaved scratch projects on startup", "status": "completed", "blockedBy": [1, 2]},
+    {"id": 5, "subject": "Task 5: Full backend gate (pytest/ruff/mypy)", "status": "completed", "blockedBy": [1, 2, 3, 4]}
   ],
-  "lastUpdated": "2026-06-15T00:00:00Z"
+  "lastUpdated": "2026-06-15T12:00:00Z"
 }
