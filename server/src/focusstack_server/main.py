@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 
-from focusstack_server.api import frames, fs, jobs, projects, system, viewer
+from focusstack_server.api import frames, fs, jobs, presets, projects, system, viewer
 from focusstack_server.jobs import JobQueue
 from focusstack_server.ws import WsHub
 
@@ -36,6 +36,7 @@ def create_app(data_dir: Path) -> FastAPI:
     app.include_router(frames.router)
     app.include_router(jobs.router)
     app.include_router(viewer.router)
+    app.include_router(presets.router)
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:

@@ -46,3 +46,14 @@ def delete(pid: str, request: Request) -> JSONResponse:
     if not _store(request).unregister(pid):
         return JSONResponse(status_code=404, content={"error": "not_found", "detail": pid})
     return JSONResponse(content={"unregistered": pid})
+
+
+@router.patch("/{pid}/ui-state")
+def patch_ui_state(pid: str, body: dict, request: Request) -> JSONResponse:
+    store = _store(request)
+    proj = store.get(pid)
+    if proj is None:
+        return JSONResponse(status_code=404, content={"error": "not_found", "detail": pid})
+    proj.ui_state.update(body)
+    store.save(proj)
+    return JSONResponse(content={"ui_state": proj.ui_state})
