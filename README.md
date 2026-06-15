@@ -15,7 +15,7 @@ See `docs/SPEC.md` for the full specification.
 - [x] M3 — DMap, weighted, slabbing, smart frame selection
 - [x] M4 — server + web UI (import → stack → view → export)
 - [x] M5 — retouch engine, server, UI, and browser workflow complete
-- [ ] M6 — polish, Docker, CI
+- [~] M6 — Docker + compose + CI done; UI polish (histogram, compare, export templates, validation UX) pending
 
 ## Web UI
 
@@ -30,6 +30,21 @@ by side (Vite proxies `/api` and `/ws` to the server):
 
     uv run focusstack serve        # terminal 1
     cd ui && npm run dev           # terminal 2 → http://localhost:5173
+
+## Docker
+
+Two image targets share one `Dockerfile`:
+
+    docker compose up --build            # CUDA target, needs nvidia-container-toolkit
+    docker build --target cpu -t focusstack:cpu .   # CPU-only, smaller, no GPU
+
+Compose binds the port to `127.0.0.1` only (the server is auth-less and localhost-only
+by design), mounts your photo library read-only at `/photos`, and keeps projects/cache
+in the `fs-data` volume. Set `FOCUSSTACK_PHOTOS=/path/to/photos` to point at your library.
+
+**Apple silicon:** Docker on macOS has no GPU passthrough, so MPS is unreachable from
+containers. Run natively with `uv sync && uv run focusstack serve` for MPS acceleration;
+the `cpu` image works but is the slow path.
 
 ## Development
 

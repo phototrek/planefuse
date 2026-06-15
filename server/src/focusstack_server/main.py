@@ -87,16 +87,23 @@ def _find_free_port(host: str, start: int) -> int:
     return start
 
 
-def run(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:  # pragma: no cover
+def run(host: str | None = None, port: int | None = None) -> None:  # pragma: no cover
+    import os
+
     import uvicorn
     from platformdirs import user_data_dir
 
-    data_dir = Path(user_data_dir("focusstack", "focusstack"))
+    # Env overrides let the Docker image bind 0.0.0.0 and use a mounted data dir (§16).
+    host = host or os.environ.get("FOCUSSTACK_HOST", DEFAULT_HOST)
+    port = port or int(os.environ.get("FOCUSSTACK_PORT", str(DEFAULT_PORT)))
+    data_env = os.environ.get("FOCUSSTACK_DATA_DIR")
+    data_dir = Path(data_env) if data_env else Path(user_data_dir("focusstack", "focusstack"))
     port = _find_free_port(host, port)
     url = f"http://{host}:{port}"
     log.info("FocusStack server on %s", url)
-    try:
-        webbrowser.open(url)
-    except Exception:  # noqa: BLE001
-        pass
+    if host in ("127.0.0.1", "localhost"):  # don't pop a browser in a headless container
+        try:
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001
+            pass
     uvicorn.run(create_app(data_dir), host=host, port=port)

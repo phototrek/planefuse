@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync (CPU torch only — the CUDA wheel must never download here)
+        run: uv sync --frozen --extra cpu
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Mypy
+        run: uv run mypy engine/src server/src
+
+      - name: Pytest (CPU device)
+        run: uv run pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: UI install + typecheck + build
+        working-directory: ui
+        run: |
+          npm ci --no-audit --no-fund --fetch-retries=5 --fetch-retry-maxtimeout=120000
+          npm run check
+          npm run build
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build CPU image
+        run: docker build --target cpu -t focusstack:cpu .
+
+      - name: Run and health-check /api/system
+        run: |
+          docker run -d --name fs -p 8425:8425 focusstack:cpu
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8425/api/system >/dev/null; then
+              echo "healthy"; docker rm -f fs; exit 0
+            fi
+            sleep 2
+          done
+          echo "server never became healthy"; docker logs fs; docker rm -f fs; exit 1

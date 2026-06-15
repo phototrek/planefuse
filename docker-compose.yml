@@ -1,0 +1,32 @@
+# Runs the cuda target with GPU access (SPEC §16). Requires nvidia-container-toolkit.
+# The port is bound to 127.0.0.1 ONLY — `8425:8425` would bind 0.0.0.0 and expose the
+# auth-less server to the LAN, violating §9's localhost-only model.
+services:
+  focusstack:
+    build:
+      context: .
+      target: cuda
+    image: focusstack:cuda
+    ports:
+      - "127.0.0.1:8425:8425"
+    volumes:
+      # Your photo library, read-only. Adjust the host path to taste.
+      - "${FOCUSSTACK_PHOTOS:-./photos}:/photos:ro"
+      # Projects + cache, read-write (matches FOCUSSTACK_DATA_DIR in the image).
+      - "fs-data:/data"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8425/api/system').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  fs-data:
