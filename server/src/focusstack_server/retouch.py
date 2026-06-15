@@ -81,8 +81,8 @@ class RetouchManager:
             for image_id in record["sources"]
         }
         session = RetouchSession(base, sources)
-        for stroke in record["strokes"]:
-            session.apply(_stroke_from_dict(stroke))
+        session.strokes = [_stroke_from_dict(stroke) for stroke in record["strokes"]]
+        session.rebuild()
         build_pyramid(session.composite, project.cache / "tiles" / record["working_image_id"])
         self._cache[session_id] = session
         return session

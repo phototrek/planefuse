@@ -62,6 +62,14 @@ class RetouchSession:
         for stroke in self.strokes[checkpoint_count:count]:
             self._blend(stroke)
 
+    def rebuild(self) -> None:
+        strokes = self.strokes
+        self.composite = self.base.copy()
+        self.strokes = []
+        self.checkpoints = [(0, self.base.copy())]
+        for stroke in strokes:
+            self._commit(stroke)
+
     def undo(self) -> Bbox:
         if not self.strokes:
             return EMPTY_BBOX

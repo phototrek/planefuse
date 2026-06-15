@@ -76,3 +76,14 @@ def test_undo_to_middle_equals_fresh_replay():
         replayed.apply(stroke)
 
     assert np.array_equal(undone.composite, replayed.composite)
+
+
+def test_rebuild_restores_composite_from_recorded_strokes():
+    session = _session()
+    session.apply(_stroke())
+    expected = session.composite.copy()
+    session.composite.fill(0.0)
+
+    session.rebuild()
+
+    assert np.array_equal(session.composite, expected)
