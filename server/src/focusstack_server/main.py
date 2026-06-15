@@ -10,7 +10,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from focusstack_server.api import frames, fs, projects, system
+from focusstack_server.api import frames, fs, jobs, projects, system
+from focusstack_server.jobs import JobQueue
 
 log = logging.getLogger(__name__)
 
@@ -24,10 +25,15 @@ def create_app(data_dir: Path) -> FastAPI:
     data_dir.mkdir(parents=True, exist_ok=True)
     app = FastAPI(title="FocusStack", version="0.1.0")
     app.state.data_dir = data_dir
+    # App-scoped job queue. on_event is replaced by the WsHub broadcast in Task 7;
+    # for now events accumulate so progress is observable in tests.
+    app.state.events = []
+    app.state.jobs = JobQueue(on_event=app.state.events.append)
     app.include_router(system.router)
     app.include_router(fs.router)
     app.include_router(projects.router)
     app.include_router(frames.router)
+    app.include_router(jobs.router)
     # Mount the built UI if it exists (M4 Part 2 builds it); harmless if absent.
     ui_dir = Path(__file__).parent / "static"
     if ui_dir.is_dir():
