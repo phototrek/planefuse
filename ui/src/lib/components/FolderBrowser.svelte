@@ -3,9 +3,17 @@
 
   let {
     value = $bindable(''),
+    selected = $bindable<string[]>([]),
+    selectFiles = false,
     placeholder = 'C:\\path\\to\\folder',
     inputTestid = ''
-  }: { value?: string; placeholder?: string; inputTestid?: string } = $props();
+  }: {
+    value?: string;
+    selected?: string[];
+    selectFiles?: boolean;
+    placeholder?: string;
+    inputTestid?: string;
+  } = $props();
 
   let listing = $state<FsList | null>(null);
   let err = $state('');
@@ -36,7 +44,16 @@
     load();
   }
 
+  function toggleFile(path: string, checked: boolean) {
+    if (checked) {
+      selected = [...selected, path];
+    } else {
+      selected = selected.filter((s) => s !== path);
+    }
+  }
+
   let dirs = $derived(listing?.entries.filter((e) => e.is_dir) ?? []);
+  let files = $derived(listing?.entries.filter((e) => !e.is_dir) ?? []);
 </script>
 
 <div class="fb">
@@ -64,6 +81,19 @@
           {#each dirs as d (d.path)}
             <li><button class="ghost" onclick={() => into(d.path)}>📁 {d.name}</button></li>
           {/each}
+          {#if selectFiles}
+            {#each files as f (f.path)}
+              <li class="file-row">
+                <input
+                  type="checkbox"
+                  id="fb-file-{f.path}"
+                  checked={selected.includes(f.path)}
+                  onchange={(e) => toggleFile(f.path, e.currentTarget.checked)}
+                />
+                <label for="fb-file-{f.path}" class="file-label">🖼 {f.name}</label>
+              </li>
+            {/each}
+          {/if}
         </ul>
       {/if}
     </div>
@@ -80,4 +110,7 @@
   ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
   li button { width: 100%; text-align: left; font-size: 13px; }
   .bad { color: var(--bad); font-size: 12px; }
+  .file-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+  .file-row input[type='checkbox'] { width: 14px; height: 14px; accent-color: var(--accent); flex-shrink: 0; }
+  .file-label { font-size: 13px; cursor: pointer; color: var(--text-dim); }
 </style>
