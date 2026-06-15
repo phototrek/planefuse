@@ -20,6 +20,10 @@ class ScanBody(BaseModel):
     path: str
 
 
+class PathsBody(BaseModel):
+    paths: list[str]
+
+
 def _store(request: Request) -> ProjectStore:
     return ProjectStore(request.app.state.data_dir)
 
@@ -27,6 +31,29 @@ def _store(request: Request) -> ProjectStore:
 def _scan_paths(folder: Path) -> list[Path]:
     return sorted(p for p in folder.iterdir()
                   if p.is_file() and p.suffix.lower() in _IMAGE_EXT)
+
+
+def _expand(raw: list[str]) -> list[str]:
+    """Expand a mix of folders and image files into image-file paths."""
+    out: list[str] = []
+    for r in raw:
+        p = Path(r)
+        if p.is_dir():
+            out.extend(str(x) for x in _scan_paths(p))
+        elif p.is_file() and p.suffix.lower() in _IMAGE_EXT:
+            out.append(str(p))
+    return out
+
+
+def _report(proj) -> dict:
+    """Validate the project's full frame list and shape the scan-style report."""
+    report = validate_stack([Path(p) for p in proj.frames])
+    return {
+        "ok": report.ok,
+        "width": report.width, "height": report.height, "bit_depth": report.bit_depth,
+        "files": [{"name": Path(f.path).name, "path": str(f.path),
+                   "status": f.status, "message": f.message} for f in report.files],
+    }
 
 
 @router.post("/{pid}/frames/scan")
@@ -38,16 +65,36 @@ def scan(pid: str, body: ScanBody, request: Request) -> JSONResponse:
     folder = Path(body.path)
     if not folder.is_dir():
         return JSONResponse(status_code=400, content={"error": "not_a_directory", "detail": body.path})
-    paths = _scan_paths(folder)
-    report = validate_stack(paths)
-    proj.frames = [str(p) for p in paths]
+    proj.frames = [str(p) for p in _scan_paths(folder)]
     store.save(proj)
-    return JSONResponse(content={
-        "ok": report.ok,
-        "width": report.width, "height": report.height, "bit_depth": report.bit_depth,
-        "files": [{"name": Path(f.path).name, "path": str(f.path),
-                   "status": f.status, "message": f.message} for f in report.files],
-    })
+    return JSONResponse(content=_report(proj))
+
+
+@router.post("/{pid}/frames/add")
+def add_frames(pid: str, body: PathsBody, request: Request) -> JSONResponse:
+    store = _store(request)
+    proj = store.get(pid)
+    if proj is None:
+        return JSONResponse(status_code=404, content={"error": "not_found", "detail": pid})
+    frames = list(proj.frames)
+    for p in _expand(body.paths):
+        if p not in frames:
+            frames.append(p)
+    proj.frames = frames
+    store.save(proj)
+    return JSONResponse(content=_report(proj))
+
+
+@router.post("/{pid}/frames/remove")
+def remove_frames(pid: str, body: PathsBody, request: Request) -> JSONResponse:
+    store = _store(request)
+    proj = store.get(pid)
+    if proj is None:
+        return JSONResponse(status_code=404, content={"error": "not_found", "detail": pid})
+    drop = set(body.paths)
+    proj.frames = [f for f in proj.frames if f not in drop]
+    store.save(proj)
+    return JSONResponse(content=_report(proj))
 
 
 @router.post("/{pid}/frames/auto-group")
