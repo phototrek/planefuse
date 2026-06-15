@@ -99,18 +99,21 @@
   let lh = $derived(Math.max(1, Math.floor(height / f)));
   let cols = $derived(Math.ceil(lw / TILE));
   let rows = $derived(Math.ceil(lh / TILE));
-  let tileScreen = $derived(TILE * f * scale); // screen px per tile edge
+  let fullTile = $derived(TILE * f * scale); // screen px for a full 256px tile
 
-  // Visible tile range (cull off-screen tiles).
+  // Visible tiles (cull off-screen). Edge tiles are smaller than 256px, so each
+  // tile carries its own clamped width/height to avoid stretching.
   let visible = $derived.by(() => {
-    const out: { i: number; j: number; left: number; top: number }[] = [];
+    const out: { i: number; j: number; left: number; top: number; w: number; h: number }[] = [];
     if (!cw || !ch) return out;
     for (let j = 0; j < rows; j++) {
       for (let i = 0; i < cols; i++) {
-        const left = tx + i * tileScreen;
-        const top = ty + j * tileScreen;
-        if (left + tileScreen < 0 || top + tileScreen < 0 || left > cw || top > ch) continue;
-        out.push({ i, j, left, top });
+        const left = tx + i * fullTile;
+        const top = ty + j * fullTile;
+        const tw = (Math.min((i + 1) * TILE, lw) - i * TILE) * f * scale;
+        const th = (Math.min((j + 1) * TILE, lh) - j * TILE) * f * scale;
+        if (left + tw < 0 || top + th < 0 || left > cw || top > ch) continue;
+        out.push({ i, j, left, top, w: tw, h: th });
       }
     }
     return out;
@@ -154,8 +157,8 @@
       draggable="false"
       style:left="{t.left}px"
       style:top="{t.top}px"
-      style:width="{tileScreen}px"
-      style:height="{tileScreen}px"
+      style:width="{t.w}px"
+      style:height="{t.h}px"
     />
   {/each}
 

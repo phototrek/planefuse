@@ -13,7 +13,7 @@ See `docs/SPEC.md` for the full specification.
 - [x] M1 — engine core, PMax, CLI
 - [x] M2 — alignment
 - [x] M3 — DMap, weighted, slabbing, smart frame selection
-- [~] M4 — server done; web UI (Svelte) pending
+- [x] M4 — server + web UI (import → stack → view → export)
 - [ ] M5 — retouching
 - [ ] M6 — polish, Docker, CI
 
