@@ -9,7 +9,7 @@
   let method = $state('pmax');
   let values = $state<Record<string, unknown>>({});
 
-  let useAlign = $state(false);
+  let useAlign = $state(true);
   let maxLongEdge = $state(2048);
   let useSelect = $state(false);
 

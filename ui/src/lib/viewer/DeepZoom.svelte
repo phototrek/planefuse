@@ -7,13 +7,19 @@
     levels,
     width,
     height,
-    onmove
+    onmove,
+    tileVersion,
+    brushRadius,
+    onstroke
   }: {
     imageId: string;
     levels: number;
     width: number;
     height: number;
     onmove?: (v: { scale: number; tx: number; ty: number }) => void;
+    tileVersion?: (z: number, x: number, y: number) => number;
+    brushRadius?: number;
+    onstroke?: (points: [number, number, number][]) => void;
   } = $props();
 
   const TILE = 256;
@@ -57,15 +63,46 @@
   }
 
   let dragging = false;
+  let painting = false;
+  let spaceHeld = $state(false);
+  let strokePoints: [number, number, number][] = [];
   let lastX = 0;
   let lastY = 0;
+  let pointerX = $state(0);
+  let pointerY = $state(0);
+  let pointerInside = $state(false);
+
+  function point(e: PointerEvent): [number, number, number] | null {
+    const r = viewport.getBoundingClientRect();
+    pointerX = e.clientX - r.left;
+    pointerY = e.clientY - r.top;
+    const x = (pointerX - tx) / scale;
+    const y = (pointerY - ty) / scale;
+    if (x < 0 || y < 0 || x >= width || y >= height) return null;
+    return [x, y, e.pressure > 0 ? e.pressure : 1];
+  }
+
   function ondown(e: PointerEvent) {
-    dragging = true;
-    lastX = e.clientX;
-    lastY = e.clientY;
+    if (e.button !== 0) return;
+    viewport.focus();
     viewport.setPointerCapture(e.pointerId);
+    if (onstroke && !spaceHeld) {
+      painting = true;
+      strokePoints = [];
+      const p = point(e);
+      if (p) strokePoints.push(p);
+    } else {
+      dragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+    }
   }
   function onmovep(e: PointerEvent) {
+    const p = point(e);
+    if (painting) {
+      if (p) strokePoints.push(p);
+      return;
+    }
     if (!dragging) return;
     tx += e.clientX - lastX;
     ty += e.clientY - lastY;
@@ -74,13 +111,31 @@
     emit();
   }
   function onup(e: PointerEvent) {
+    if (painting) {
+      const p = point(e);
+      if (p) strokePoints.push(p);
+      painting = false;
+      if (strokePoints.length) onstroke?.(strokePoints);
+      strokePoints = [];
+    }
     dragging = false;
-    viewport.releasePointerCapture(e.pointerId);
+    if (viewport.hasPointerCapture(e.pointerId)) viewport.releasePointerCapture(e.pointerId);
   }
 
   function onkey(e: KeyboardEvent) {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+    if (e.code === 'Space' && onstroke) {
+      spaceHeld = true;
+      e.preventDefault();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'f' || e.key === 'F') fit();
     else if (e.key === 'z' || e.key === 'Z') actualSize();
+  }
+
+  function onkeyup(e: KeyboardEvent) {
+    if (e.code === 'Space') spaceHeld = false;
   }
 
   let raf = 0;
@@ -134,7 +189,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onkey} />
+<svelte:window onkeydown={onkey} onkeyup={onkeyup} />
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
@@ -143,16 +198,20 @@
   role="application"
   aria-label="Deep-zoom image viewer"
   tabindex="0"
+  class:editing={!!onstroke && !spaceHeld}
   onwheel={onwheel}
   onpointerdown={ondown}
   onpointermove={onmovep}
   onpointerup={onup}
+  onpointercancel={onup}
+  onpointerenter={() => (pointerInside = true)}
+  onpointerleave={() => (pointerInside = false)}
 >
   {#each visible as t (z + '-' + t.i + '-' + t.j)}
     <img
       class="tile"
       data-testid="viewer-tile"
-      src={api.tileUrl(imageId, z, t.i, t.j)}
+      src={api.tileUrl(imageId, z, t.i, t.j, tileVersion?.(z, t.i, t.j))}
       alt=""
       draggable="false"
       style:left="{t.left}px"
@@ -161,6 +220,16 @@
       style:height="{t.h}px"
     />
   {/each}
+
+  {#if onstroke && brushRadius && pointerInside && !spaceHeld}
+    <div
+      class="brush"
+      style:left="{pointerX - brushRadius * scale}px"
+      style:top="{pointerY - brushRadius * scale}px"
+      style:width="{brushRadius * scale * 2}px"
+      style:height="{brushRadius * scale * 2}px"
+    ></div>
+  {/if}
 
   <div class="hud mono">
     <span>{Math.round(scale * 100)}%</span>
@@ -176,17 +245,27 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
+    touch-action: none;
     background:
       repeating-conic-gradient(#0d0e11 0% 25%, #0a0b0e 0% 50%) 50% / 24px 24px;
     cursor: grab;
     outline: none;
   }
   .viewport:active { cursor: grabbing; }
+  .viewport.editing { cursor: none; }
   .tile {
     position: absolute;
     image-rendering: auto;
     user-select: none;
     -webkit-user-drag: none;
+  }
+  .brush {
+    position: absolute;
+    z-index: 2;
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75);
+    pointer-events: none;
   }
   .hud {
     position: absolute;

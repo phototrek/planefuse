@@ -14,7 +14,7 @@ See `docs/SPEC.md` for the full specification.
 - [x] M2 — alignment
 - [x] M3 — DMap, weighted, slabbing, smart frame selection
 - [x] M4 — server + web UI (import → stack → view → export)
-- [~] M5 — retouch engine + server done; retouch UI pending
+- [x] M5 — retouch engine, server, UI, and browser workflow complete
 - [ ] M6 — polish, Docker, CI
 
 ## Web UI

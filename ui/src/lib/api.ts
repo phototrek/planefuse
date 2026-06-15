@@ -8,6 +8,27 @@ export interface Project { id: string; name: string; directory: string; frames: 
 export interface Job { id: string; type: string; status: string; percent: number; message: string; result: unknown; error: string; params: Record<string, unknown>; }
 export interface FsEntry { name: string; path: string; is_dir: boolean; }
 export interface FsList { path: string; entries: FsEntry[]; image_count: number; }
+export interface RetouchSource { image_id: string; method: string | null; }
+export interface RetouchSession {
+  id: string;
+  target_image_id: string;
+  working_image_id: string;
+  sources: string[];
+  strokes: RetouchStroke[];
+  rev: number;
+}
+export interface RetouchStroke {
+  source_id: string;
+  points: [number, number, number][];
+  radius: number;
+  hardness: number;
+  opacity: number;
+  mode: 'normal' | 'erase';
+}
+export interface RetouchMutation {
+  rev: number;
+  dirty_tiles: { z: number; x: number; y: number }[];
+}
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const r = await fetch(url, {
@@ -57,6 +78,23 @@ export const api = {
   deletePreset: (name: string) => req('DELETE', `/api/presets/${encodeURIComponent(name)}`),
   patchUiState: (id: string, state: Record<string, unknown>) =>
     req('PATCH', `/api/projects/${id}/ui-state`, state),
+  listRetouch: (id: string) =>
+    req<{ sessions: RetouchSession[] }>('GET', `/api/projects/${id}/retouch`),
+  createRetouch: (id: string, targetImageId: string) =>
+    req<{ session_id: string; working_image_id: string; sources: RetouchSource[] }>(
+      'POST',
+      `/api/projects/${id}/retouch`,
+      { target_image_id: targetImageId }
+    ),
+  retouchStroke: (id: string, stroke: RetouchStroke) =>
+    req<RetouchMutation>('POST', `/api/retouch/${id}/stroke`, stroke),
+  retouchUndo: (id: string) =>
+    req<RetouchMutation>('POST', `/api/retouch/${id}/undo`),
+  retouchRedo: (id: string) =>
+    req<RetouchMutation>('POST', `/api/retouch/${id}/redo`),
+  flattenRetouch: (id: string, name: string) =>
+    req<{ image_id: string }>('POST', `/api/retouch/${id}/flatten`, { name }),
   thumbUrl: (id: string, path: string) => `/api/projects/${id}/frame-thumb?path=${encodeURIComponent(path)}`,
-  tileUrl: (imageId: string, z: number, x: number, y: number) => `/api/viewer/${imageId}/tile/${z}/${x}/${y}`
+  tileUrl: (imageId: string, z: number, x: number, y: number, rev?: number) =>
+    `/api/viewer/${imageId}/tile/${z}/${x}/${y}${rev === undefined ? '' : `?rev=${rev}`}`
 };
