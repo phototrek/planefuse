@@ -7,11 +7,12 @@ import socket
 import webbrowser
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 
 from focusstack_server.api import frames, fs, jobs, projects, system
 from focusstack_server.jobs import JobQueue
+from focusstack_server.ws import WsHub
 
 log = logging.getLogger(__name__)
 
@@ -23,17 +24,27 @@ def create_app(data_dir: Path) -> FastAPI:
     """Build the app. All on-disk state lives under `data_dir` (hermetic in tests)."""
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
+    hub = WsHub()
     app = FastAPI(title="FocusStack", version="0.1.0")
     app.state.data_dir = data_dir
-    # App-scoped job queue. on_event is replaced by the WsHub broadcast in Task 7;
-    # for now events accumulate so progress is observable in tests.
-    app.state.events = []
-    app.state.jobs = JobQueue(on_event=app.state.events.append)
+    app.state.ws = hub
+    # App-scoped job queue; progress events fan out over the WebSocket hub.
+    app.state.jobs = JobQueue(on_event=hub.publish)
     app.include_router(system.router)
     app.include_router(fs.router)
     app.include_router(projects.router)
     app.include_router(frames.router)
     app.include_router(jobs.router)
+
+    @app.websocket("/ws")
+    async def ws_endpoint(ws: WebSocket) -> None:
+        await hub.connect(ws)
+        try:
+            while True:
+                await ws.receive_text()  # keepalive; clients may send pings
+        except Exception:  # noqa: BLE001 - disconnect
+            hub.disconnect(ws)
+
     # Mount the built UI if it exists (M4 Part 2 builds it); harmless if absent.
     ui_dir = Path(__file__).parent / "static"
     if ui_dir.is_dir():
