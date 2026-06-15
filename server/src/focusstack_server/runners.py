@@ -40,3 +40,23 @@ def make_stack_runner(store: ProjectStore, proj: Project, params: dict[str, Any]
         return {"image_id": image_id}
 
     return run
+
+
+def make_export_runner(proj: Project, params: dict[str, Any]) -> Callable:
+    image_id = params["image_id"]
+    dest = Path(params["dest"])
+    bit_depth = int(params.get("bit_depth", 16))
+    jpeg_quality = int(params.get("jpeg_quality", 95))
+    info = proj.images.get(image_id)
+
+    def run(progress: Callable[[str, float], None], cancel: Callable[[], bool]) -> dict:
+        if info is None:
+            raise ValueError(f"unknown image_id {image_id}")
+        progress("export", 0.1)
+        img = load_image(Path(info["path"])).pixels
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        save_image(img, dest, bit_depth=bit_depth, jpeg_quality=jpeg_quality)
+        progress("done", 1.0)
+        return {"dest": str(dest)}
+
+    return run

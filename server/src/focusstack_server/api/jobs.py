@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from focusstack_server.projects import ProjectStore
-from focusstack_server.runners import make_stack_runner
+from focusstack_server.runners import make_export_runner, make_stack_runner
 
 router = APIRouter(prefix="/api")
 
@@ -32,6 +32,8 @@ def enqueue(pid: str, body: EnqueueBody, request: Request) -> JSONResponse:
     q = request.app.state.jobs
     if body.type == "stack":
         work = make_stack_runner(store, proj, body.params)
+    elif body.type == "export":
+        work = make_export_runner(proj, body.params)
     else:
         return JSONResponse(status_code=400,
                             content={"error": "unsupported_job", "detail": body.type})
@@ -67,3 +69,16 @@ class ReorderBody(BaseModel):
 def reorder(body: ReorderBody, request: Request) -> dict:
     request.app.state.jobs.reorder(body.order)
     return {"ok": True}
+
+
+class ExportBody(BaseModel):
+    image_id: str
+    dest: str
+    format: str = "tif"
+    bit_depth: int = 16
+    jpeg_quality: int = 95
+
+
+@router.post("/projects/{pid}/export")
+def export(pid: str, body: ExportBody, request: Request) -> JSONResponse:
+    return enqueue(pid, EnqueueBody(type="export", params=body.model_dump()), request)
