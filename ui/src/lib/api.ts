@@ -5,7 +5,7 @@ export interface Algorithm { name: string; params: ParamSpec[]; }
 export interface FileStatus { name: string; path: string; status: string; message: string; }
 export interface ScanReport { ok: boolean; width: number | null; height: number | null; bit_depth: number | null; files: FileStatus[]; }
 export interface Project { id: string; name: string; directory: string; frames: string[]; images: Record<string, Record<string, unknown>>; jobs: unknown[]; ui_state: Record<string, unknown>; }
-export interface Job { id: string; type: string; status: string; percent: number; message: string; result: unknown; error: string; }
+export interface Job { id: string; type: string; status: string; percent: number; message: string; result: unknown; error: string; params: Record<string, unknown>; }
 export interface FsEntry { name: string; path: string; is_dir: boolean; }
 export interface FsList { path: string; entries: FsEntry[]; image_count: number; }
 
@@ -39,6 +39,8 @@ export const api = {
   autoGroup: (id: string) => req<{ groups: string[][] }>('POST', `/api/projects/${id}/frames/auto-group`),
   enqueueStack: (id: string, params: Record<string, unknown>) =>
     req<{ id: string }>('POST', `/api/projects/${id}/jobs`, { type: 'stack', params }),
+  enqueueJob: (id: string, type: string, params: Record<string, unknown>) =>
+    req<{ id: string }>('POST', `/api/projects/${id}/jobs`, { type, params }),
   listJobs: () => req<Job[]>('GET', '/api/jobs'),
   getJob: (jid: string) => req<Job>('GET', `/api/jobs/${jid}`),
   cancelJob: (jid: string) => req('DELETE', `/api/jobs/${jid}`),

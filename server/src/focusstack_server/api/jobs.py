@@ -20,7 +20,7 @@ class EnqueueBody(BaseModel):
 def _job_dict(job) -> dict:
     return {"id": job.id, "type": job.type, "status": job.status,
             "percent": job.percent, "message": job.message,
-            "result": job.result, "error": job.error}
+            "result": job.result, "error": job.error, "params": job.params}
 
 
 @router.post("/projects/{pid}/jobs")

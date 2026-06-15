@@ -73,12 +73,30 @@
     presets = await api.listPresets();
   }
 
+  let groups = $derived((appState.project?.ui_state.groups as string[][] | undefined) ?? []);
+
   async function stack() {
     if (!appState.project) return;
     busy = true;
     error = '';
     try {
       await api.enqueueStack(appState.project.id, buildParams());
+      await goto('/queue');
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function stackAllGroups() {
+    if (!appState.project || groups.length === 0) return;
+    busy = true;
+    error = '';
+    try {
+      for (const g of groups) {
+        await api.enqueueStack(appState.project.id, { ...buildParams(), frames: g });
+      }
       await goto('/queue');
     } catch (e) {
       error = (e as Error).message;
@@ -152,6 +170,11 @@
     </section>
 
     <div class="actions">
+      {#if groups.length > 1}
+        <button class="big" data-testid="stack-all" disabled={busy} onclick={stackAllGroups}>
+          Stack all groups ({groups.length})
+        </button>
+      {/if}
       <button class="primary big" data-testid="stack-go" disabled={busy} onclick={stack}>Stack</button>
     </div>
   {/if}
