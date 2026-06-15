@@ -1,210 +1,133 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, type Project, type ScanReport } from '$lib/api';
-  import { appState } from '$lib/stores.svelte';
-  import FolderBrowser from '$lib/components/FolderBrowser.svelte';
-  import Filmstrip from '$lib/components/Filmstrip.svelte';
+  import { api } from '$lib/api';
+  import { appState, type WorkspaceResult } from '$lib/stores.svelte';
+  import Toolbar from '$lib/workspace/Toolbar.svelte';
+  import InputList from '$lib/workspace/InputList.svelte';
+  import ViewerPane from '$lib/workspace/ViewerPane.svelte';
+  import RenderDrawer from '$lib/workspace/RenderDrawer.svelte';
 
-  let projects = $state<Project[]>([]);
-  let showCreate = $state(false);
-  let newPath = $state('');
-  let newName = $state('');
+  let initError = $state('');
 
-  let showImport = $state(false);
-  let scanPath = $state('');
-  let report = $state<ScanReport | null>(null);
-  let groups = $state<string[][] | null>(null);
-
-  let busy = $state(false);
-  let error = $state('');
-
-  async function refresh() {
-    try {
-      projects = await api.listProjects();
-    } catch (e) {
-      error = (e as Error).message;
-    }
-  }
-  onMount(refresh);
-
-  async function create() {
-    if (!newPath || !newName) return;
-    busy = true;
-    error = '';
-    try {
-      const p = await api.createProject(newPath, newName);
-      appState.project = p;
-      showCreate = false;
-      report = null;
-      groups = null;
-      await refresh();
-    } catch (e) {
-      error = (e as Error).message;
-    } finally {
-      busy = false;
-    }
+  function buildResults(images: Record<string, Record<string, unknown>>): WorkspaceResult[] {
+    return Object.entries(images)
+      .filter(([, img]) => img.kind === 'result')
+      .map(([id, img]) => ({
+        id,
+        label: String(img.name ?? img.method ?? id),
+        method: String(img.method ?? ''),
+        path: String(img.path ?? ''),
+        imageId: undefined,
+        thumb: undefined,
+        levels: undefined,
+        width: undefined,
+        height: undefined
+      }));
   }
 
-  async function open(id: string) {
-    busy = true;
-    error = '';
+  onMount(async () => {
     try {
-      appState.project = await api.getProject(id);
-      report = null;
-      groups = null;
+      if (!appState.project) {
+        appState.project = await api.createScratchProject();
+      }
+      if (appState.project.frames.length > 0 && appState.inputs.length === 0) {
+        const report = await api.addFrames(appState.project.id, []);
+        appState.inputs = report.files;
+      }
+      if (appState.results.length === 0) {
+        appState.results = buildResults(appState.project.images);
+      }
     } catch (e) {
-      error = (e as Error).message;
-    } finally {
-      busy = false;
+      initError = (e as Error).message;
     }
-  }
+  });
 
-  async function scan() {
-    if (!appState.project || !scanPath) return;
-    busy = true;
-    error = '';
-    try {
-      report = await api.scan(appState.project.id, scanPath);
-      appState.project = await api.getProject(appState.project.id);
-      groups = null;
-    } catch (e) {
-      error = (e as Error).message;
-    } finally {
-      busy = false;
-    }
-  }
+  // Result discovery: when a tracked stack job finishes, re-fetch the project
+  // and rebuild results. This MUST be async (API call) so $derived cannot be used.
+  $effect(() => {
+    const trackedIds = appState.stackJobIds;
+    if (!appState.project || trackedIds.length === 0) return;
 
-  async function autoGroup() {
-    if (!appState.project) return;
-    busy = true;
-    try {
-      groups = (await api.autoGroup(appState.project.id)).groups;
-      appState.project!.ui_state.groups = groups;
-      await api.patchUiState(appState.project.id, { groups });
-    } catch (e) {
-      error = (e as Error).message;
-    } finally {
-      busy = false;
+    for (const id of trackedIds) {
+      const job = appState.jobs[id];
+      if (job?.status !== 'done') continue;
+      const projectId = appState.project.id;
+      // Remove from tracked set immediately to prevent re-triggering.
+      appState.stackJobIds = appState.stackJobIds.filter((jid) => jid !== id);
+      // Re-fetch project to pick up the new result image.
+      void api.getProject(projectId).then((project) => {
+        appState.project = project;
+        const newResults = buildResults(project.images);
+        appState.results = newResults;
+        if (newResults.length > 0) {
+          appState.viewer = { kind: 'result', id: newResults[newResults.length - 1].id };
+        }
+      });
+      break; // Handle one at a time; effect re-runs if more remain.
     }
-  }
+  });
 </script>
 
-<div class="screen">
-  <header class="head">
-    <p class="eyebrow">Screen 1</p>
-    <h1>Project &amp; Import</h1>
-  </header>
-
-  {#if error}<p class="err mono">{error}</p>{/if}
-
-  <section class="panel block">
-    <div class="block-head">
-      <h2>Projects</h2>
-      <button class="primary" data-testid="new-project" onclick={() => (showCreate = !showCreate)}>
-        New project
-      </button>
-    </div>
-
-    {#if showCreate}
-      <div class="create">
-        <label>
-          <span class="eyebrow">Folder</span>
-          <FolderBrowser bind:value={newPath} inputTestid="project-path" />
-        </label>
-        <label>
-          <span class="eyebrow">Name</span>
-          <input type="text" bind:value={newName} data-testid="project-name" placeholder="My macro stack" />
-        </label>
-        <button class="primary" data-testid="create-project" disabled={busy} onclick={create}>Create</button>
-      </div>
-    {/if}
-
-    <ul class="plist">
-      {#each projects as p (p.id)}
-        <li class:active={appState.project?.id === p.id}>
-          <span class="pn">{p.name}</span>
-          <span class="pd mono faint">{p.directory}</span>
-          <button class="ghost" onclick={() => open(p.id)}>Open</button>
-        </li>
-      {:else}
-        <li class="empty faint">No projects yet — create one above.</li>
-      {/each}
-    </ul>
-  </section>
-
-  {#if appState.project}
-    <section class="panel block">
-      <div class="block-head">
-        <h2>Import frames</h2>
-        <button data-testid="import-frames" onclick={() => (showImport = !showImport)}>
-          {showImport ? 'Hide' : 'Import from folder'}
-        </button>
-      </div>
-
-      {#if showImport}
-        <div class="create">
-          <label>
-            <span class="eyebrow">Source folder</span>
-            <FolderBrowser bind:value={scanPath} inputTestid="scan-path" />
-          </label>
-          <button class="primary" data-testid="scan-go" disabled={busy} onclick={scan}>Scan</button>
-        </div>
-      {/if}
-
-      {#if report}
-        <div class="report">
-          <span
-            class="status"
-            class:ok={report.ok}
-            data-testid={report.ok ? 'scan-ok' : 'scan-bad'}
-          >
-            {report.ok ? '✓ all frames valid' : '✗ validation issues'}
-          </span>
-          <span class="faint mono">
-            {report.files.length} frames · {report.width}×{report.height} · {report.bit_depth}-bit
-          </span>
-          <button class="ghost" onclick={autoGroup}>Auto-group</button>
-        </div>
-        <Filmstrip projectId={appState.project.id} files={report.files} />
-      {/if}
-
-      {#if groups}
-        <div class="groups">
-          <p class="eyebrow">Proposed groups ({groups.length})</p>
-          {#each groups as g, i (i)}
-            <div class="grp mono">Group {i + 1}: {g.length} frames</div>
-          {/each}
-        </div>
-      {/if}
-    </section>
-  {/if}
+<div class="workspace">
+  <div class="ws-toolbar">
+    <Toolbar />
+  </div>
+  <div class="ws-inputs panel">
+    <InputList />
+  </div>
+  <div class="ws-viewer">
+    <ViewerPane />
+  </div>
+  <div class="ws-drawer">
+    <RenderDrawer />
+  </div>
 </div>
 
+{#if initError}
+  <div class="init-error mono">Init error: {initError}</div>
+{/if}
+
 <style>
-  .screen { padding: 28px 32px; max-width: 1100px; display: flex; flex-direction: column; gap: 20px; }
-  .head h1 { font-size: 26px; margin-top: 4px; }
-  .block { padding: 18px 20px; }
-  .block-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-  .block-head h2 { font-size: 16px; }
-  .create { display: flex; flex-direction: column; gap: 14px; padding: 4px 0 14px; max-width: 640px; }
-  .create label { display: flex; flex-direction: column; gap: 6px; }
-  .plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .plist li {
+  .workspace {
     display: grid;
-    grid-template-columns: 1fr auto auto;
-    align-items: center;
-    gap: 14px;
-    padding: 11px 4px;
-    border-top: 1px solid var(--line);
+    grid-template-columns: 240px 1fr;
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      "toolbar toolbar"
+      "inputs viewer"
+      "drawer drawer";
+    height: 100%;
+    overflow: hidden;
   }
-  .plist li.active { box-shadow: inset 3px 0 0 var(--accent); padding-left: 12px; }
-  .plist .pn { font-weight: 600; }
-  .plist .pd { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 460px; }
-  .plist .empty { display: block; grid-template-columns: none; }
-  .report { display: flex; align-items: center; gap: 16px; padding: 6px 0; }
-  .status { font-weight: 600; color: var(--bad); }
-  .status.ok { color: var(--good); }
-  .groups { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
-  .grp { font-size: 12px; color: var(--text-dim); }
-  .err { color: var(--bad); font-size: 13px; }
+  .ws-toolbar {
+    grid-area: toolbar;
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    min-height: 48px;
+  }
+  .ws-inputs {
+    grid-area: inputs;
+    border-right: 1px solid var(--line);
+    border-radius: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .ws-viewer { grid-area: viewer; overflow: hidden; min-width: 0; min-height: 0; }
+  .ws-drawer { grid-area: drawer; min-height: 0; }
+  .init-error {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel);
+    border: 1px solid var(--bad);
+    color: var(--bad);
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    font-size: 12px;
+    z-index: 9999;
+  }
 </style>

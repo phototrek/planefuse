@@ -133,20 +133,27 @@
     try {
       const projectId = appState.project.id;
       const { image_id } = await api.flattenRetouch(session.id, flattenName || 'Retouched');
+      // Refresh project to pick up the new result image.
       appState.project = await api.getProject(projectId);
       const info = appState.project.images[image_id];
       if (typeof info?.path !== 'string') throw new Error('Flattened result path is missing.');
-      const reg = await api.registerView(projectId, info.path);
-      const view = {
-        srcId: image_id,
-        imageId: reg.image_id,
-        levels: reg.levels,
-        width: reg.width,
-        height: reg.height
-      };
-      appState.project.ui_state.view = view;
-      await api.patchUiState(projectId, { view });
-      await goto('/viewer');
+      // Rebuild results from project.images so the workspace drawer has it.
+      appState.results = Object.entries(appState.project.images)
+        .filter(([, img]) => img.kind === 'result')
+        .map(([id, img]) => ({
+          id,
+          label: String(img.name ?? img.method ?? id),
+          method: String(img.method ?? ''),
+          path: String(img.path ?? ''),
+          imageId: undefined as string | undefined,
+          thumb: undefined as string | undefined,
+          levels: undefined as number | undefined,
+          width: undefined as number | undefined,
+          height: undefined as number | undefined
+        }));
+      // Auto-select the new flattened result in the viewer.
+      appState.viewer = { kind: 'result', id: image_id };
+      await goto('/');
     } catch (e) {
       error = (e as Error).message;
       busy = false;
@@ -178,7 +185,7 @@
     <p class="dim">Opening retouch session…</p>
   {:else if !session || !working}
     <p class="error">{error}</p>
-    <a class="back" href="/viewer">Back to Viewer</a>
+    <a class="back" href="/">Back to Workspace</a>
   {:else}
     <header class="toolbar panel">
       <div>
