@@ -43,7 +43,11 @@ export const api = {
   getJob: (jid: string) => req<Job>('GET', `/api/jobs/${jid}`),
   cancelJob: (jid: string) => req('DELETE', `/api/jobs/${jid}`),
   registerView: (id: string, path: string) =>
-    req<{ image_id: string; levels: number }>('POST', `/api/projects/${id}/viewer/register`, { path }),
+    req<{ image_id: string; levels: number; width: number; height: number }>(
+      'POST',
+      `/api/projects/${id}/viewer/register`,
+      { path }
+    ),
   export: (id: string, body: Record<string, unknown>) =>
     req<{ id: string }>('POST', `/api/projects/${id}/export`, body),
   listPresets: () => req<{ name: string; params: Record<string, unknown> }[]>('GET', '/api/presets'),

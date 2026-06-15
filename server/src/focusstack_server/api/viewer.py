@@ -31,11 +31,14 @@ def register(pid: str, body: RegisterBody, request: Request) -> JSONResponse:
         return JSONResponse(status_code=404, content={"error": "not_found", "detail": pid})
     image_id = uuid.uuid4().hex[:12]
     img = load_image(Path(body.path)).pixels
+    height, width = img.shape[:2]
     tiles_root = proj.cache / "tiles"
     levels = build_pyramid(img, tiles_root / image_id)
-    proj.images[image_id] = {"kind": "view", "path": body.path, "levels": levels}
+    proj.images[image_id] = {"kind": "view", "path": body.path, "levels": levels,
+                             "width": width, "height": height}
     store.save(proj)
-    return JSONResponse(content={"image_id": image_id, "levels": levels})
+    return JSONResponse(content={"image_id": image_id, "levels": levels,
+                                 "width": width, "height": height})
 
 
 @router.get("/projects/{pid}/frame-thumb", response_model=None)
