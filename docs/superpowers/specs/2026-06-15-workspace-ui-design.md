@@ -1,7 +1,7 @@
 # FocusStack Single-Screen Workspace — Design Spec
 
 **Date:** 2026-06-15
-**Status:** Approved (pending user spec review)
+**Status:** ✅ Approved by spec-document-reviewer (pass 2); pending user spec review
 
 ## 1. Goal & Motivation
 
@@ -59,9 +59,14 @@ the frame-management verbs the additive UI needs. All changes are in
   path is used. Client calls this once on load if it has no current project.
 
 ### 4.2 Save / rename
-- `PATCH /api/projects/{id}` body `{ name?, saved? }`: updates `name`, sets
-  `ui_state.saved = true`. (Directory move is **out of scope**; saved scratch
-  projects keep living under data_dir — they are simply retained.)
+- New `PATCH /api/projects/{id}` body `{ name?, saved? }`. `name` is the
+  **top-level** `Project.name` field; `saved` is stored in **`ui_state.saved`**
+  (consistent with §4.1) — the route sets `proj.name` and/or
+  `proj.ui_state["saved"]` accordingly and persists. (This is distinct from the
+  existing `PATCH /api/projects/{id}/ui-state`, which only merges `ui_state`.)
+- Directory move is **out of scope**; saved scratch projects keep living under
+  data_dir — they are simply retained (prune skips them).
+- Add `api.saveProject(id, { name, saved })` to the client.
 
 ### 4.3 Additive frame management
 - `POST /api/projects/{id}/frames/add` body `{ paths: [...] }`: each path may be a
@@ -74,11 +79,15 @@ the frame-management verbs the additive UI needs. All changes are in
   paths, persist, return the updated report.
 - `scan` is kept but reimplemented to call the same core (replace semantics) so
   existing tests and any callers keep working.
+- Known cost: re-validating the **full** frame list on every add re-reads every
+  frame (same as `scan` does today). Acceptable for now; revisit with per-frame
+  caching if large stacks feel slow.
 
 ### 4.4 Prune unsaved scratch
 - On server startup (`create_app`), delete scratch project directories under
   `data_dir/scratch/` whose `project.json` has `ui_state.saved` falsy **and**
-  whose mtime is older than 7 days; unregister them. Never touches dirs outside
+  whose **`project.json` mtime** (deterministic across platforms, unlike dir
+  mtime) is older than 7 days; unregister them. Never touches dirs outside
   `data_dir/scratch/`. Bounded, best-effort, logged.
 
 ## 5. Client state (`stores.svelte.ts`)
@@ -87,8 +96,10 @@ the frame-management verbs the additive UI needs. All changes are in
 - `project: Project | null` — the current (scratch or saved) project.
 - `inputs: FileStatus[]` — current frame list with per-frame status (from the
   add/remove report).
-- `results: { id, label, method, thumb, path }[]` — generated images (derived from
-  `project.images`).
+- `results: { id, label, method, thumb, path }[]` — **derived** from
+  `project.images` (single source of truth: the project), enriched with the
+  registered `image_id` + tile-0 `thumb` once each is registered. Not stored
+  independently of the project.
 - `jobs: Record<string, Job>` — live job state, updated over the WebSocket.
 - `viewerTarget: { kind: 'input' | 'result' | 'job', id: string } | null`.
 - `drawerOpen: boolean`.
@@ -101,9 +112,28 @@ the target descriptor.
 | Component | Responsibility | Depends on |
 |-----------|----------------|------------|
 | `Toolbar.svelte` | Project name + Save; algorithm `<select>`; Options popover (renders `ParamSpec[]` from `/api/algorithms`); Run; Auto-group; Export popover; device badge. Emits run/export/save intents. | `api`, `appState` |
-| `InputList.svelte` | "Add…" (opens `FolderBrowser` for a folder, or multi-file pick); frame rows with status; remove; click selects into viewer. | `api`, `FolderBrowser`, `appState` |
+| `InputList.svelte` | "Add…" (opens `FolderBrowser`); frame rows with status; remove; click selects into viewer. | `api`, `FolderBrowser`, `appState` |
+
+**Add — folder and individual files:** the backend `frames/add` already accepts a
+mix of folder and file paths (§4.3). The current `FolderBrowser` only *picks a
+folder*. Part 2 enhances it so individual image files in the listing
+(`/api/fs/list` already returns file entries) are selectable (checkbox per file
+row) and returns the chosen path set — satisfying "a bunch of images **or** a
+folder." Picking a folder still adds all its images.
 | `ViewerPane.svelte` | Renders `DeepZoom` for the current target; for a `job` target shows progress + params/info instead. | `DeepZoom`, `api`, `appState` |
 | `RenderDrawer.svelte` | Collapsible. Thumbnails of results + chips for in-flight jobs with progress bars. Click result → viewer; click running job → viewer progress. Per-result actions: Export, Retouch (→ `/retouch`). | `api`, `appState` |
+
+**Export popover (in `Toolbar`):** because the dedicated export screen is deleted
+and there is no native save dialog, the popover must still let the user pick the
+**output folder** via `FolderBrowser` plus a filename, then build the `dest`
+absolute path the existing `POST /{id}/export` requires. Format / bit-depth /
+JPEG-quality controls sit alongside.
+
+**Result thumbnails (in `RenderDrawer`):** `frame-thumb` only serves paths in
+`proj.frames`; results live in `proj.images` and are **not** frames. So a result
+thumbnail is its lowest-resolution registered tile — `registerView(path)` then
+`tileUrl(image_id, 0, 0, 0)` — the same trick the `/retouch` source rail already
+uses. Register each result's path once when it first appears.
 
 `+page.svelte` is the shell: the grid, mounts the four components, ensures a
 scratch project on mount, and opens the WebSocket to feed `appState.jobs`.
@@ -119,9 +149,16 @@ scratch project on mount, and opens the WebSocket to feed `appState.jobs`.
    group.
 4. **Progress:** WS events update `appState.jobs`; `RenderDrawer` shows bars; a
    `job`-target viewer shows live progress.
-5. **Done:** result registered in `project.images`; thumbnail appears in the
-   drawer and is auto-selected into the viewer (via `registerView` + `tileUrl`).
-6. **Export:** popover → `export` writes a TIFF (existing endpoint).
+5. **Done:** the WS feed carries status/percent but **deliberately omits the job
+   `result`** (`jobs.py::_emit`; `ws.ts` preserves the prior `result`). So on a
+   `status: done` event the client **re-fetches the project** (`api.getProject`)
+   to pick up the newly added `project.images` entry, registers its path
+   (`registerView`), shows its tile-0 thumbnail in the drawer, and auto-selects
+   it into the viewer. (Equivalently it may `getJob(jid)` for `result.image_id`;
+   the spec mandates re-fetch as the source of truth since `images` is keyed
+   there.) Listening to WS alone is insufficient and must not be the mechanism.
+6. **Export:** popover (folder via `FolderBrowser` + filename → `dest`, plus
+   format/bit-depth) → `export` writes the file (existing endpoint).
 7. **Retouch:** result action → persist `retouchSessionId` (existing create flow)
    → `goto('/retouch')`.
 8. **Save:** `Toolbar` → `PATCH /projects/{id}` with name + `saved=true`.
@@ -147,7 +184,8 @@ scratch project on mount, and opens the WebSocket to feed `appState.jobs`.
 - prune deletes only old unsaved scratch dirs; keeps saved + recent.
 
 **UI (Playwright):** rewrite `smoke.spec.ts` into one workspace flow — add frames
-→ Run PMax → drawer progress → result selected in viewer → Export TIFF (verify
+→ Run PMax → drawer progress → **result becomes selectable and renders in the
+viewer** (explicitly covers the §7-step-5 re-fetch path) → Export TIFF (verify
 output dims/bit-depth as today). The existing retouch e2e continues to launch
 from a result.
 
