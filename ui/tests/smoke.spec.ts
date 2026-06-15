@@ -58,10 +58,9 @@ async function waitForJob(page: import('@playwright/test').Page, jobId: string, 
     .toBe('done');
 }
 
-test('import -> PMax -> view -> export', async ({ page }) => {
+test('workspace: add -> PMax -> view -> export', async ({ page }) => {
   const work = tempWork('fs-e2e-');
   const frames = join(work, 'frames');
-  const projDir = join(work, 'proj');
   const outFile = join(work, 'out.tif');
 
   // Generate a synthetic stack via the engine (cwd is the ui/ package).
@@ -69,74 +68,90 @@ test('import -> PMax -> view -> export', async ({ page }) => {
     stdio: 'inherit'
   });
 
+  // Workspace opens directly — auto scratch project, no create step.
   await page.goto('/');
 
-  // Create project
-  await page.getByTestId('new-project').click();
-  await page.getByTestId('project-path').fill(projDir);
-  await page.getByTestId('project-name').fill('E2E');
-  await page.getByTestId('create-project').click();
-
-  // Import frames
-  await page.getByTestId('import-frames').click();
+  // Add frames: open add panel, fill the scan-path, confirm.
+  await page.getByTestId('ws-add').click();
   await page.getByTestId('scan-path').fill(frames);
-  await page.getByTestId('scan-go').click();
-  await expect(page.getByTestId('scan-ok')).toBeVisible();
+  await page.getByTestId('ws-add-confirm').click();
+  await expect(page.getByTestId('ws-input').first()).toBeVisible();
 
-  // Stack with PMax
-  await page.getByTestId('nav-stack').click();
+  // Stack with PMax: capture the POST /jobs response to get jobId.
   await page.getByTestId('algo-pmax').click();
-  await expect(page.getByRole('checkbox', { name: 'Align frames' })).toBeChecked();
-  await page.getByTestId('stack-go').click();
+  const jobResponse = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && r.url().includes('/jobs')
+  );
+  await page.getByTestId('ws-run').click();
+  const jobId = ((await (await jobResponse).json()) as { id: string }).id;
+  await waitForJob(page, jobId);
 
-  // Queue: wait for done
-  await expect(page.getByTestId('job-status')).toHaveText('done', { timeout: 60_000 });
-
-  // Viewer: a tile renders
-  await page.getByTestId('nav-viewer').click();
+  // Result + viewer: a result thumb appears; click it; a DeepZoom tile renders.
+  await expect(page.getByTestId('ws-result').first()).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('ws-result').first().click();
   await expect(page.getByTestId('viewer-tile').first()).toBeVisible({ timeout: 30_000 });
 
-  // Export
-  await page.getByTestId('nav-export').click();
+  // Export: open export popover, fill dest, confirm, wait for done.
+  await page.getByTestId('ws-export').click();
   await page.getByTestId('export-dest').fill(outFile);
+  const exportResponse = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && r.url().endsWith('/export')
+  );
   await page.getByTestId('export-go').click();
-  await expect(page.getByTestId('export-done')).toBeVisible({ timeout: 60_000 });
+  const exportJobId = ((await (await exportResponse).json()) as { id: string }).id;
+  await waitForJob(page, exportJobId);
+  await expect(page.getByTestId('export-done')).toBeVisible();
+
+  expect(statSync(outFile).size).toBeGreaterThan(0);
+  execFileSync(
+    'uv',
+    [
+      'run',
+      '--project',
+      '..',
+      'python',
+      '-c',
+      'import sys; from focusstack.io import load_image; f=load_image(sys.argv[1]); assert f.pixels.shape == (64, 80, 3); assert f.bit_depth == 16',
+      outFile
+    ],
+    { stdio: 'inherit' }
+  );
 });
 
-test('retouch result -> paint -> undo/redo -> flatten -> export', async ({ page }) => {
+test('workspace: retouch result -> paint -> undo/redo -> flatten -> export', async ({ page }) => {
   test.setTimeout(5 * 60_000);
   const work = tempWork('fs-retouch-e2e-');
   const frames = join(work, 'frames');
-  const projDir = join(work, 'proj');
   const outFile = join(work, 'retouched.tif');
 
   execSync(`uv run --project .. python tests/fixtures/make_stack.py "${frames}"`, {
     stdio: 'inherit'
   });
 
+  // Workspace opens directly.
   await page.goto('/');
-  await page.getByTestId('new-project').click();
-  await page.getByTestId('project-path').fill(projDir);
-  await page.getByTestId('project-name').fill('Retouch E2E');
-  await page.getByTestId('create-project').click();
-  await page.getByTestId('import-frames').click();
-  await page.getByTestId('scan-path').fill(frames);
-  await page.getByTestId('scan-go').click();
-  await expect(page.getByTestId('scan-ok')).toBeVisible();
 
+  // Add frames.
+  await page.getByTestId('ws-add').click();
+  await page.getByTestId('scan-path').fill(frames);
+  await page.getByTestId('ws-add-confirm').click();
+  await expect(page.getByTestId('ws-input').first()).toBeVisible();
+
+  // Stack pmax and weighted in sequence.
   for (const method of ['pmax', 'weighted']) {
-    await page.getByTestId('nav-stack').click();
     await page.getByTestId(`algo-${method}`).click();
     const response = page.waitForResponse(
       (r) => r.request().method() === 'POST' && r.url().endsWith('/jobs')
     );
-    await page.getByTestId('stack-go').click();
+    await page.getByTestId('ws-run').click();
     const jobId = ((await (await response).json()) as { id: string }).id;
     await waitForJob(page, jobId);
   }
 
-  await page.getByTestId('nav-viewer').click();
-  await expect(page.getByTestId('viewer-tile').first()).toBeVisible();
+  // Select the first result and launch retouch from it.
+  await expect(page.getByTestId('ws-result').first()).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('ws-result').first().click();
+  await expect(page.getByTestId('viewer-tile').first()).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('retouch-this-result').click();
 
   await expect(page).toHaveURL(/\/retouch$/);
@@ -173,7 +188,8 @@ test('retouch result -> paint -> undo/redo -> flatten -> export', async ({ page 
   await page.getByTestId('retouch-flatten').click();
   const flattenedId = ((await (await flattenResponse).json()) as { image_id: string }).image_id;
 
-  await expect(page).toHaveURL(/\/viewer$/);
+  // After flatten, expect to be back on the workspace with the viewer showing the flattened result.
+  await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId('viewer-tile').first()).toBeVisible();
   const projects = (await page.request.get('/api/projects')).json() as Promise<
     { images: Record<string, { name?: string }> }[]
@@ -181,7 +197,8 @@ test('retouch result -> paint -> undo/redo -> flatten -> export', async ({ page 
   const project = (await projects).find((item) => flattenedId in item.images);
   expect(project?.images[flattenedId].name).toBe('E2E retouched');
 
-  await page.getByTestId('nav-export').click();
+  // Export the retouched result.
+  await page.getByTestId('ws-export').click();
   await page.getByTestId('export-dest').fill(outFile);
   const exportResponse = page.waitForResponse(
     (r) => r.request().method() === 'POST' && r.url().endsWith('/export')
@@ -207,38 +224,34 @@ test('retouch result -> paint -> undo/redo -> flatten -> export', async ({ page 
   );
 });
 
-test('real Zion TIFFs: import -> PMax -> view -> export', async ({ page }) => {
+test('real Zion TIFFs: workspace: add -> PMax -> view -> export', async ({ page }) => {
   test.skip(!existsSync(zionStack), `real stack not available at ${zionStack}`);
   test.setTimeout(10 * 60_000);
 
   const work = tempWork('fs-zion-e2e-');
   const frames = stageZionSources(work);
-  const projDir = join(work, 'proj');
   const outFile = join(work, 'zion-pmax.tif');
 
+  // Workspace opens directly.
   await page.goto('/');
 
-  await page.getByTestId('new-project').click();
-  await page.getByTestId('project-path').fill(projDir);
-  await page.getByTestId('project-name').fill('Zion real-data E2E');
-  await page.getByTestId('create-project').click();
-
-  await page.getByTestId('import-frames').click();
+  // Add frames.
+  await page.getByTestId('ws-add').click();
   await page.getByTestId('scan-path').fill(frames);
-  await page.getByTestId('scan-go').click();
-  await expect(page.getByTestId('scan-ok')).toBeVisible({ timeout: 120_000 });
+  await page.getByTestId('ws-add-confirm').click();
+  await expect(page.getByTestId('ws-input').first()).toBeVisible({ timeout: 120_000 });
   await expect(page.getByText('7 frames · 5199×7795 · 16-bit')).toBeVisible();
 
-  await page.getByTestId('nav-stack').click();
+  // Stack with PMax, assert align param.
   await page.getByTestId('algo-pmax').click();
   await expect(page.getByRole('checkbox', { name: 'Align frames' })).toBeChecked();
   const stackResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST' &&
-      response.url().includes('/api/projects/') &&
-      response.url().endsWith('/jobs')
+    (r) =>
+      r.request().method() === 'POST' &&
+      r.url().includes('/api/projects/') &&
+      r.url().endsWith('/jobs')
   );
-  await page.getByTestId('stack-go').click();
+  await page.getByTestId('ws-run').click();
   const stackJobResponse = await stackResponse;
   const stackBody = stackJobResponse.request().postDataJSON() as {
     params: { align?: { max_long_edge: number } };
@@ -247,16 +260,19 @@ test('real Zion TIFFs: import -> PMax -> view -> export', async ({ page }) => {
   const stackJobId = ((await stackJobResponse.json()) as { id: string }).id;
   await waitForJob(page, stackJobId, 5 * 60_000);
 
-  await page.getByTestId('nav-viewer').click();
+  // Result renders in viewer.
+  await expect(page.getByTestId('ws-result').first()).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('ws-result').first().click();
   await expect(page.getByTestId('viewer-tile').first()).toBeVisible({ timeout: 120_000 });
 
-  await page.getByTestId('nav-export').click();
+  // Export.
+  await page.getByTestId('ws-export').click();
   await page.getByTestId('export-dest').fill(outFile);
   const exportResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST' &&
-      response.url().includes('/api/projects/') &&
-      response.url().endsWith('/export')
+    (r) =>
+      r.request().method() === 'POST' &&
+      r.url().includes('/api/projects/') &&
+      r.url().endsWith('/export')
   );
   await page.getByTestId('export-go').click();
   const exportJobId = ((await (await exportResponse).json()) as { id: string }).id;
