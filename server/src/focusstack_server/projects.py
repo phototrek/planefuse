@@ -21,6 +21,7 @@ class Project:
     images: dict[str, dict] = field(default_factory=dict)  # image_id -> {kind, path/...}
     jobs: list[dict] = field(default_factory=list)         # job history
     ui_state: dict = field(default_factory=dict)
+    retouch: list[dict] = field(default_factory=list)
 
     @property
     def path(self) -> Path:
@@ -96,11 +97,12 @@ class ProjectStore:
 def asdict_no_props(proj: Project) -> dict[str, Any]:
     return {"id": proj.id, "name": proj.name, "directory": proj.directory,
             "frames": proj.frames, "images": proj.images, "jobs": proj.jobs,
-            "ui_state": proj.ui_state}
+            "ui_state": proj.ui_state, "retouch": proj.retouch}
 
 
 def _load(pj: Path) -> Project:
     d = json.loads(pj.read_text())
     return Project(id=d["id"], name=d["name"], directory=d["directory"],
                    frames=d.get("frames", []), images=d.get("images", {}),
-                   jobs=d.get("jobs", []), ui_state=d.get("ui_state", {}))
+                   jobs=d.get("jobs", []), ui_state=d.get("ui_state", {}),
+                   retouch=d.get("retouch", []))
