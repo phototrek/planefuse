@@ -53,6 +53,8 @@ def make_export_runner(proj: Project, params: dict[str, Any]) -> Callable:
     def run(progress: Callable[[str, float], None], cancel: Callable[[], bool]) -> dict:
         if info is None:
             raise ValueError(f"unknown image_id {image_id}")
+        if "path" not in info:
+            raise ValueError(f"image {image_id} is not exportable (no path)")
         progress("export", 0.1)
         img = load_image(Path(info["path"])).pixels
         dest.parent.mkdir(parents=True, exist_ok=True)
