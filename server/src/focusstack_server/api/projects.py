@@ -58,3 +58,22 @@ def patch_ui_state(pid: str, body: dict, request: Request) -> JSONResponse:
     proj.ui_state.update(body)
     store.save(proj)
     return JSONResponse(content={"ui_state": proj.ui_state})
+
+
+class SaveBody(BaseModel):
+    name: str | None = None
+    saved: bool | None = None
+
+
+@router.patch("/{pid}")
+def save_project(pid: str, body: SaveBody, request: Request) -> JSONResponse:
+    store = _store(request)
+    proj = store.get(pid)
+    if proj is None:
+        return JSONResponse(status_code=404, content={"error": "not_found", "detail": pid})
+    if body.name is not None:
+        proj.name = body.name
+    if body.saved is not None:
+        proj.ui_state["saved"] = body.saved
+    store.save(proj)
+    return JSONResponse(content={"id": proj.id, "name": proj.name, "ui_state": proj.ui_state})

@@ -26,3 +26,17 @@ def test_create_with_explicit_path_still_works(tmp_path):
     assert (proj_dir / "project.json").exists()
     assert proj["name"] == "Mine"
     assert proj["ui_state"]["saved"] is False
+
+
+def test_patch_project_name_and_saved(tmp_path):
+    c = _c(tmp_path)
+    pid = c.post("/api/projects", json={}).json()["id"]
+    r = c.patch(f"/api/projects/{pid}", json={"name": "Beetle stack", "saved": True})
+    assert r.status_code == 200, r.text
+    got = c.get(f"/api/projects/{pid}").json()
+    assert got["name"] == "Beetle stack"        # top-level field
+    assert got["ui_state"]["saved"] is True      # flag in ui_state
+
+
+def test_patch_unknown_project_404(tmp_path):
+    assert _c(tmp_path).patch("/api/projects/nope", json={"name": "x"}).status_code == 404
