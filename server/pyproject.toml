@@ -9,6 +9,7 @@ dependencies = [
   "uvicorn>=0.30",
   "websockets>=13",
   "platformdirs>=4.0",
+  "pillow>=10.0",
 ]
 
 [project.scripts]
