@@ -8,7 +8,7 @@ import webbrowser
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 
 from focusstack_server.api import frames, fs, jobs, presets, projects, system, viewer
 from focusstack_server.jobs import JobQueue
@@ -47,11 +47,30 @@ def create_app(data_dir: Path) -> FastAPI:
         except Exception:  # noqa: BLE001 - disconnect
             hub.disconnect(ws)
 
-    # Mount the built UI if it exists (M4 Part 2 builds it); harmless if absent.
-    ui_dir = Path(__file__).parent / "static"
-    if ui_dir.is_dir():
-        app.mount("/", StaticFiles(directory=ui_dir, html=True), name="ui")
+    # Serve the built UI if present (M4 Part 2 builds it); harmless if absent.
+    # /api and /ws are matched by their routers first; this catch-all serves real
+    # files, else the SPA shell so client-routed deep links resolve.
+    static = _static_dir()
+    if static.is_dir():
+
+        @app.get("/{full_path:path}", response_model=None)
+        def spa(full_path: str) -> FileResponse | JSONResponse:
+            # Never shadow unmatched API/ws routes — let them 404 as JSON.
+            if full_path == "api" or full_path.startswith("api/") or full_path == "ws":
+                return JSONResponse(status_code=404, content={"error": "not_found", "detail": full_path})
+            candidate = static / full_path
+            if full_path and candidate.is_file():
+                return FileResponse(candidate)
+            index = static / "index.html"
+            if index.is_file():
+                return FileResponse(index)
+            return JSONResponse(status_code=404, content={"error": "not_found", "detail": full_path})
+
     return app
+
+
+def _static_dir() -> Path:
+    return Path(__file__).parent / "static"
 
 
 def _find_free_port(host: str, start: int) -> int:
