@@ -1,0 +1,14 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-15-m4-part2-ui.md",
+  "tasks": [
+    {"id": 12, "subject": "Task 1: Server additions — frame thumbnail + SPA fallback", "status": "pending"},
+    {"id": 13, "subject": "Task 2: SvelteKit scaffold + build into server static + app shell", "status": "pending", "blockedBy": [12]},
+    {"id": 14, "subject": "Task 3: Project / Import screen", "status": "pending", "blockedBy": [13]},
+    {"id": 15, "subject": "Task 4: Stack setup screen", "status": "pending", "blockedBy": [13]},
+    {"id": 16, "subject": "Task 5: Queue / Progress screen + WebSocket", "status": "pending", "blockedBy": [13]},
+    {"id": 17, "subject": "Task 6: Viewer screen + deep-zoom canvas", "status": "pending", "blockedBy": [13]},
+    {"id": 18, "subject": "Task 7: Export screen", "status": "pending", "blockedBy": [13]},
+    {"id": 19, "subject": "Task 8: Playwright smoke, gates, finish", "status": "pending", "blockedBy": [14, 15, 16, 17, 18]}
+  ],
+  "lastUpdated": "2026-06-15"
+}
