@@ -52,12 +52,15 @@ class ProjectStore:
     def _write_registry(self, reg: dict[str, str]) -> None:
         _atomic_write_json(self._registry, reg)
 
-    def create(self, directory: Path, name: str) -> Project:
+    def create(self, directory: Path | None, name: str) -> Project:
+        pid = uuid.uuid4().hex[:12]
+        if directory is None:
+            directory = self.data_dir / "scratch" / pid
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "cache").mkdir(exist_ok=True)
-        pid = uuid.uuid4().hex[:12]
-        proj = Project(id=pid, name=name, directory=str(directory))
+        proj = Project(id=pid, name=name, directory=str(directory),
+                       ui_state={"saved": False})
         self._save(proj)
         reg = self._read_registry()
         reg[pid] = str(directory)

@@ -14,8 +14,8 @@ router = APIRouter(prefix="/api/projects")
 
 
 class CreateProject(BaseModel):
-    path: str
-    name: str
+    path: str = ""
+    name: str = "Untitled"
 
 
 def _store(request: Request) -> ProjectStore:
@@ -24,7 +24,8 @@ def _store(request: Request) -> ProjectStore:
 
 @router.post("")
 def create(body: CreateProject, request: Request) -> dict:
-    proj = _store(request).create(Path(body.path), body.name)
+    directory = Path(body.path) if body.path else None
+    proj = _store(request).create(directory, body.name)
     return asdict_no_props(proj)
 
 
