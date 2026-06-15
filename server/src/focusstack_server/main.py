@@ -97,7 +97,7 @@ def _prune_scratch(data_dir: Path, max_age_days: int = 7) -> None:
             continue
         try:
             data = json.loads(pj.read_text())
-            if data.get("ui_state", {}).get("saved"):
+            if data.get("ui_state", {}).get("saved"):  # absent/falsy saved == prunable
                 continue
             if pj.stat().st_mtime >= cutoff:
                 continue

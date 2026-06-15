@@ -53,3 +53,27 @@ def test_remove_frames(tmp_path):
     remaining = _frames(c, pid)
     assert paths[0] not in remaining
     assert len(remaining) == 2
+
+
+def test_remove_by_folder_clears_its_frames(tmp_path):
+    src = tmp_path / "frames"
+    src.mkdir()
+    for i in range(3):
+        save_image(np.zeros((16, 16, 3), np.float32), src / f"f_{i:03d}.tif", bit_depth=16)
+    c, pid = _proj(tmp_path)
+    c.post(f"/api/projects/{pid}/frames/add", json={"paths": [str(src)]})
+    # removing the folder is symmetric with adding it
+    c.post(f"/api/projects/{pid}/frames/remove", json={"paths": [str(src)]})
+    assert _frames(c, pid) == []
+
+
+def test_dedup_is_path_normalized(tmp_path):
+    src = tmp_path / "frames"
+    src.mkdir()
+    save_image(np.zeros((16, 16, 3), np.float32), src / "f.tif", bit_depth=16)
+    c, pid = _proj(tmp_path)
+    # same file via a "." segment must collapse to one entry (portable: resolve()
+    # normalizes the path on every OS, not relying on case-insensitivity)
+    c.post(f"/api/projects/{pid}/frames/add", json={"paths": [str(src / "f.tif")]})
+    c.post(f"/api/projects/{pid}/frames/add", json={"paths": [str(src / "." / "f.tif")]})
+    assert len(_frames(c, pid)) == 1

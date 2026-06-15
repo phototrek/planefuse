@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from focusstack.io import validate_stack
-from focusstack_server.projects import ProjectStore
+from focusstack_server.projects import Project, ProjectStore
 
 router = APIRouter(prefix="/api/projects")
 _IMAGE_EXT = {".tif", ".tiff", ".jpg", ".jpeg", ".png"}
@@ -34,19 +34,22 @@ def _scan_paths(folder: Path) -> list[Path]:
 
 
 def _expand(raw: list[str]) -> list[str]:
-    """Expand a mix of folders and image files into image-file paths."""
+    """Expand a mix of folders and image files into canonical image-file paths.
+    Paths are resolved so dedup/removal use a stable key (the same file via a
+    different spelling or case — e.g. on Windows — collapses to one entry)."""
     out: list[str] = []
     for r in raw:
         p = Path(r)
         if p.is_dir():
-            out.extend(str(x) for x in _scan_paths(p))
+            out.extend(str(x.resolve()) for x in _scan_paths(p))
         elif p.is_file() and p.suffix.lower() in _IMAGE_EXT:
-            out.append(str(p))
+            out.append(str(p.resolve()))
     return out
 
 
-def _report(proj) -> dict:
-    """Validate the project's full frame list and shape the scan-style report."""
+def _report(proj: Project) -> dict:
+    """Validate the project's full frame list and shape the scan-style report.
+    Re-reads every frame on each call (same cost as `scan`); fine for now."""
     report = validate_stack([Path(p) for p in proj.frames])
     return {
         "ok": report.ok,
@@ -91,7 +94,9 @@ def remove_frames(pid: str, body: PathsBody, request: Request) -> JSONResponse:
     proj = store.get(pid)
     if proj is None:
         return JSONResponse(status_code=404, content={"error": "not_found", "detail": pid})
-    drop = set(body.paths)
+    # Expand folders to their files (symmetric with add) and also accept the raw
+    # strings, so a stored entry can be dropped even if the file no longer exists.
+    drop = set(_expand(body.paths)) | set(body.paths)
     proj.frames = [f for f in proj.frames if f not in drop]
     store.save(proj)
     return JSONResponse(content=_report(proj))
