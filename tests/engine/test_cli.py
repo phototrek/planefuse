@@ -48,7 +48,20 @@ def test_stack_command_validation_error(tmp_path):
     assert "wrong_size" in _err_text(result)
 
 
-def test_serve_hint_without_server_package():
+def test_serve_hint_without_server_package(monkeypatch):
+    # The server package is now installed (M4), so simulate its absence to
+    # exercise the graceful hint. Without this, `serve` would launch uvicorn
+    # and block forever.
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("focusstack_server"):
+            raise ImportError("simulated missing package")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
     result = runner.invoke(app, ["serve"])
     assert result.exit_code != 0
     assert "focusstack-server" in _err_text(result)
