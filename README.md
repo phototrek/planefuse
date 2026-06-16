@@ -24,16 +24,31 @@ files) → choose an algorithm → **Run** → results land in the render drawer
 view with deep-zoom → export. Retouch launches from a finished result.
 
 It lives in `ui/` and builds into the server's static dir, so one process
-serves UI + API:
+serves UI + API.
+
+**Quick start** — run the launcher for your machine (builds the UI on first run,
+then serves and opens your browser):
+
+    scripts\start-windows-gpu.bat    # Windows, NVIDIA GPU
+    scripts\start-windows-cpu.bat    # Windows, CPU only
+    bash scripts/start-macos.sh      # macOS (Apple Silicon uses MPS)
+
+Or do it by hand:
 
     cd ui && npm install && npm run build
-    uv run focusstack serve        # opens http://127.0.0.1:8425
+    uv run --extra cu12x focusstack serve   # NVIDIA/CUDA GPU; opens http://127.0.0.1:8425
+    # CPU-only machine: uv run --extra cpu focusstack serve
+
+The `cpu` and `cu12x` extras are mutually exclusive and have no default — pick
+one explicitly. A plain `uv run …` reverts the env to the CPU torch build, so
+always pass `--extra cu12x` to use the GPU (check it worked: `/api/system`
+reports `"device": "cuda"`).
 
 For UI development with hot reload, run the server and the Vite dev server side
-by side (Vite proxies `/api` and `/ws` to the server):
+by side (Vite proxies `/api` and `/ws` to the server, so open **5173**, not 8425):
 
-    uv run focusstack serve        # terminal 1
-    cd ui && npm run dev           # terminal 2 → http://localhost:5173
+    uv run --extra cu12x focusstack serve   # terminal 1 (GPU)
+    cd ui && npm run dev                     # terminal 2 → http://localhost:5173
 
 ## Docker
 
