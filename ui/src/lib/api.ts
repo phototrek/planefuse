@@ -76,6 +76,14 @@ export const api = {
   listPresets: () => req<{ name: string; params: Record<string, unknown> }[]>('GET', '/api/presets'),
   addPreset: (name: string, params: Record<string, unknown>) => req('POST', '/api/presets', { name, params }),
   deletePreset: (name: string) => req('DELETE', `/api/presets/${encodeURIComponent(name)}`),
+  createScratchProject: () => req<Project>('POST', '/api/projects', {}),
+  saveProject: (id: string, body: { name?: string; saved?: boolean }) =>
+    req<{ id: string; name: string; ui_state: Record<string, unknown> }>(
+      'PATCH', `/api/projects/${id}`, body),
+  addFrames: (id: string, paths: string[]) =>
+    req<ScanReport>('POST', `/api/projects/${id}/frames/add`, { paths }),
+  removeFrames: (id: string, paths: string[]) =>
+    req<ScanReport>('POST', `/api/projects/${id}/frames/remove`, { paths }),
   patchUiState: (id: string, state: Record<string, unknown>) =>
     req('PATCH', `/api/projects/${id}/ui-state`, state),
   listRetouch: (id: string) =>

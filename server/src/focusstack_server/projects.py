@@ -6,10 +6,22 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+# Per-project write locks to prevent concurrent os.replace races on Windows.
+_project_locks: dict[str, threading.Lock] = {}
+_project_locks_lock = threading.Lock()
+
+
+def _get_project_lock(project_id: str) -> threading.Lock:
+    with _project_locks_lock:
+        if project_id not in _project_locks:
+            _project_locks[project_id] = threading.Lock()
+        return _project_locks[project_id]
 
 
 @dataclass
@@ -33,9 +45,20 @@ class Project:
 
 
 def _atomic_write_json(path: Path, data: dict) -> None:
-    tmp = path.with_name(path.name + ".tmp")
+    # Use a unique temp name to avoid races between concurrent write threads.
+    # On Windows, os.replace can fail with PermissionError if another thread
+    # has the destination file open; retry briefly to work around this.
+    tmp = path.with_name(path.name + "." + uuid.uuid4().hex[:8] + ".tmp")
     tmp.write_text(json.dumps(data, indent=2))
-    os.replace(tmp, path)
+    for attempt in range(5):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            import time
+            time.sleep(0.05 * (attempt + 1))
 
 
 class ProjectStore:
@@ -52,12 +75,15 @@ class ProjectStore:
     def _write_registry(self, reg: dict[str, str]) -> None:
         _atomic_write_json(self._registry, reg)
 
-    def create(self, directory: Path, name: str) -> Project:
+    def create(self, directory: Path | None, name: str) -> Project:
+        pid = uuid.uuid4().hex[:12]
+        if directory is None:
+            directory = self.data_dir / "scratch" / pid
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "cache").mkdir(exist_ok=True)
-        pid = uuid.uuid4().hex[:12]
-        proj = Project(id=pid, name=name, directory=str(directory))
+        proj = Project(id=pid, name=name, directory=str(directory),
+                       ui_state={"saved": False})
         self._save(proj)
         reg = self._read_registry()
         reg[pid] = str(directory)
@@ -65,7 +91,8 @@ class ProjectStore:
         return proj
 
     def _save(self, proj: Project) -> None:
-        _atomic_write_json(proj.path / "project.json", asdict_no_props(proj))
+        with _get_project_lock(proj.id):
+            _atomic_write_json(proj.path / "project.json", asdict_no_props(proj))
 
     def save(self, proj: Project) -> None:
         self._save(proj)

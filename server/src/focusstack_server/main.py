@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import shutil
 import socket
+import time
 import webbrowser
 from pathlib import Path
 
@@ -25,6 +28,7 @@ def create_app(data_dir: Path) -> FastAPI:
     """Build the app. All on-disk state lives under `data_dir` (hermetic in tests)."""
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
+    _prune_scratch(data_dir)
     hub = WsHub()
     app = FastAPI(title="FocusStack", version="0.1.0")
     app.state.data_dir = data_dir
@@ -74,6 +78,35 @@ def create_app(data_dir: Path) -> FastAPI:
 
 def _static_dir() -> Path:
     return Path(__file__).parent / "static"
+
+
+def _prune_scratch(data_dir: Path, max_age_days: int = 7) -> None:
+    """Delete abandoned scratch projects: those under data_dir/scratch whose
+    project.json is unsaved and older than max_age_days. Best-effort; never
+    touches dirs outside data_dir/scratch."""
+    scratch = Path(data_dir) / "scratch"
+    if not scratch.is_dir():
+        return
+    from focusstack_server.projects import ProjectStore
+
+    store = ProjectStore(data_dir)
+    cutoff = time.time() - max_age_days * 86400
+    for d in scratch.iterdir():
+        pj = d / "project.json"
+        if not pj.is_file():
+            continue
+        try:
+            data = json.loads(pj.read_text())
+            if data.get("ui_state", {}).get("saved"):  # absent/falsy saved == prunable
+                continue
+            if pj.stat().st_mtime >= cutoff:
+                continue
+            shutil.rmtree(d, ignore_errors=True)
+            pid = data.get("id")
+            if pid:
+                store.unregister(pid)
+        except Exception:  # noqa: BLE001 - best-effort cleanup
+            log.warning("prune: skipped %s", d, exc_info=True)
 
 
 def _find_free_port(host: str, start: int) -> int:

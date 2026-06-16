@@ -19,8 +19,12 @@ See `docs/SPEC.md` for the full specification.
 
 ## Web UI
 
-The Svelte UI lives in `ui/` and builds into the server's static dir, so one
-process serves UI + API:
+The Svelte UI is a single workspace screen: add inputs (folders or individual
+files) → choose an algorithm → **Run** → results land in the render drawer →
+view with deep-zoom → export. Retouch launches from a finished result.
+
+It lives in `ui/` and builds into the server's static dir, so one process
+serves UI + API:
 
     cd ui && npm install && npm run build
     uv run focusstack serve        # opens http://127.0.0.1:8425

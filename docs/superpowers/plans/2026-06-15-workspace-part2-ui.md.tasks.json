@@ -1,0 +1,15 @@
+{
+  "planPath": "docs/superpowers/plans/2026-06-15-workspace-part2-ui.md",
+  "tasks": [
+    {"id": 6, "subject": "P2-1: API client methods (scratch/save/addFrames/removeFrames)", "status": "completed"},
+    {"id": 7, "subject": "P2-2: Workspace app state + bootstrap shape", "status": "completed"},
+    {"id": 8, "subject": "P2-3: Slim layout shell (remove wizard rail)", "status": "completed"},
+    {"id": 9, "subject": "P2-4: Workspace acceptance e2e (RED)", "status": "completed"},
+    {"id": 10, "subject": "P2-5: FolderBrowser file-selection mode", "status": "completed"},
+    {"id": 11, "subject": "P2-6: InputList component", "status": "completed", "blockedBy": [6, 7, 10]},
+    {"id": 12, "subject": "P2-7: Toolbar component", "status": "completed", "blockedBy": [6, 7]},
+    {"id": 13, "subject": "P2-8: ViewerPane + RenderDrawer + shell; delete old routes", "status": "completed", "blockedBy": [6, 7, 8, 11, 12]},
+    {"id": 14, "subject": "P2-9: Drive e2e GREEN + full gate + README", "status": "completed", "blockedBy": [9, 13]}
+  ],
+  "lastUpdated": "2026-06-16T00:00:00Z"
+}
