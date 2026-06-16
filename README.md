@@ -24,7 +24,16 @@ files) → choose an algorithm → **Run** → results land in the render drawer
 view with deep-zoom → export. Retouch launches from a finished result.
 
 It lives in `ui/` and builds into the server's static dir, so one process
-serves UI + API:
+serves UI + API.
+
+**Quick start** — run the launcher for your machine (builds the UI on first run,
+then serves and opens your browser):
+
+    scripts\start-windows-gpu.bat    # Windows, NVIDIA GPU
+    scripts\start-windows-cpu.bat    # Windows, CPU only
+    bash scripts/start-macos.sh      # macOS (Apple Silicon uses MPS)
+
+Or do it by hand:
 
     cd ui && npm install && npm run build
     uv run --extra cu12x focusstack serve   # NVIDIA/CUDA GPU; opens http://127.0.0.1:8425
