@@ -31,7 +31,8 @@ def make_stack_runner(store: ProjectStore, proj: Project, params: dict[str, Any]
         out_path = proj.cache / f"{image_id}.tif"
         icc = load_image(paths[len(paths) // 2]).icc
         save_image(result.image, out_path, bit_depth=16, icc=icc)
-        proj.images[image_id] = {"kind": "result", "path": str(out_path), "method": method}
+        proj.images[image_id] = {"kind": "result", "path": str(out_path),
+                                  "method": method, "frames": len(paths)}
         if "depth" in result.aux:
             depth_id = uuid.uuid4().hex[:12]
             dpath = proj.cache / f"{depth_id}.tif"
