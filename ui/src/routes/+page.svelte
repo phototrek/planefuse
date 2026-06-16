@@ -17,6 +17,7 @@
         label: String(img.name ?? img.method ?? id),
         method: String(img.method ?? ''),
         path: String(img.path ?? ''),
+        frames: typeof img.frames === 'number' ? img.frames : undefined,
         imageId: undefined,
         thumb: undefined,
         levels: undefined,

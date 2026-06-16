@@ -5,6 +5,7 @@ export interface WorkspaceResult {
   label: string;       // name or method
   method: string;
   path: string;
+  frames?: number;     // frame count from result metadata (for {frames} token)
   imageId?: string;    // registered viewer image id (lazy)
   thumb?: string;      // tile-0 url (lazy)
   levels?: number;
