@@ -53,6 +53,7 @@ export const api = {
   system: () => req<SystemInfo>('GET', '/api/system'),
   algorithms: () => req<Algorithm[]>('GET', '/api/algorithms'),
   fsList: (path: string) => req<FsList>('GET', `/api/fs/list?path=${encodeURIComponent(path)}`),
+  pick: (mode: 'directory' | 'files') => req<{ paths: string[] }>('POST', '/api/fs/pick', { mode }),
   listProjects: () => req<Project[]>('GET', '/api/projects'),
   createProject: (path: string, name: string) => req<Project>('POST', '/api/projects', { path, name }),
   getProject: (id: string) => req<Project>('GET', `/api/projects/${id}`),

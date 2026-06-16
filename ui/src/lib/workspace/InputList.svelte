@@ -1,21 +1,19 @@
 <script lang="ts">
   import { api, type ScanReport } from '$lib/api';
   import { appState } from '$lib/stores.svelte';
-  import FolderBrowser from '$lib/components/FolderBrowser.svelte';
 
   let showAdd = $state(false);
-  let folder = $state('');
-  let selectedFiles = $state<string[]>([]);
+  let folder = $state('');        // paste-a-path fallback (no copy, also the e2e seam)
   let busy = $state(false);
   let error = $state('');
   let lastReport = $state<ScanReport | null>(null);
 
-  async function confirm() {
-    if (!appState.project) return;
+  // Ingest absolute paths in place — the server reads them from disk, no copy.
+  async function addPaths(paths: string[]) {
+    if (!appState.project || paths.length === 0) return;
     busy = true;
     error = '';
     try {
-      const paths = selectedFiles.length > 0 ? selectedFiles : [folder];
       const report = await api.addFrames(appState.project.id, paths);
       appState.inputs = report.files;
       lastReport = report;
@@ -26,12 +24,27 @@
       }
       showAdd = false;
       folder = '';
-      selectedFiles = [];
     } catch (e) {
       error = (e as Error).message;
     } finally {
       busy = false;
     }
+  }
+
+  // Native OS dialog (server-side). Returns real absolute paths — no upload.
+  async function pick(mode: 'directory' | 'files') {
+    if (!appState.project) return;
+    error = '';
+    try {
+      const { paths } = await api.pick(mode);
+      if (paths.length > 0) await addPaths(paths);
+    } catch (e) {
+      error = (e as Error).message;
+    }
+  }
+
+  function addPasted() {
+    if (folder) addPaths([folder]);
   }
 
   async function removeFrame(path: string) {
@@ -71,22 +84,37 @@
 
   {#if showAdd}
     <div class="add-panel panel">
-      <FolderBrowser
-        bind:value={folder}
-        bind:selected={selectedFiles}
-        selectFiles
-        inputTestid="scan-path"
-        placeholder="Path to folder or type here…"
-      />
+      <div class="pick-row">
+        <button
+          class="primary"
+          data-testid="pick-folder"
+          disabled={busy}
+          onclick={() => pick('directory')}
+        >📁 Pick folder…</button>
+        <button
+          class="primary"
+          data-testid="pick-files"
+          disabled={busy}
+          onclick={() => pick('files')}
+        >🖼 Pick files…</button>
+      </div>
+      <p class="hint faint">Opens a native dialog — frames are used in place, not copied.</p>
+      <div class="paste-row">
+        <input
+          type="text"
+          bind:value={folder}
+          data-testid="scan-path"
+          placeholder="…or paste a folder / file path"
+          onkeydown={(e) => e.key === 'Enter' && addPasted()}
+        />
+        <button
+          class="ghost"
+          data-testid="ws-add-confirm"
+          disabled={busy || !folder}
+          onclick={addPasted}
+        >{busy ? 'Adding…' : 'Add'}</button>
+      </div>
       {#if error}<p class="err mono">{error}</p>{/if}
-      <button
-        class="primary"
-        data-testid="ws-add-confirm"
-        disabled={busy || !folder}
-        onclick={confirm}
-      >
-        {busy ? 'Adding…' : 'Add'}
-      </button>
     </div>
   {/if}
 
@@ -159,6 +187,15 @@
     flex-direction: column;
     gap: 10px;
     flex-shrink: 0;
+  }
+  .pick-row { display: flex; gap: 8px; }
+  .pick-row button { flex: 1; font-size: 12px; padding: 8px 6px; }
+  .hint { font-size: 11px; margin: 0; }
+  .paste-row { display: flex; gap: 8px; }
+  .paste-row input {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: 11px;
   }
   .frames {
     margin: 0;
