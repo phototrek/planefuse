@@ -31,14 +31,18 @@ def make_stack_runner(store: ProjectStore, proj: Project, params: dict[str, Any]
         out_path = proj.cache / f"{image_id}.tif"
         icc = load_image(paths[len(paths) // 2]).icc
         save_image(result.image, out_path, bit_depth=16, icc=icc)
-        proj.images[image_id] = {"kind": "result", "path": str(out_path),
-                                  "method": method, "frames": len(paths)}
+        # Reload the latest project before recording the result: another job may
+        # have added images since this runner captured `proj` at enqueue time,
+        # and store.save writes the whole project.json (would clobber them).
+        latest = store.get(proj.id) or proj
+        latest.images[image_id] = {"kind": "result", "path": str(out_path),
+                                   "method": method, "frames": len(paths)}
         if "depth" in result.aux:
             depth_id = uuid.uuid4().hex[:12]
             dpath = proj.cache / f"{depth_id}.tif"
             save_image(result.aux["depth"], dpath, bit_depth=16)
-            proj.images[depth_id] = {"kind": "depth", "path": str(dpath)}
-        store.save(proj)
+            latest.images[depth_id] = {"kind": "depth", "path": str(dpath)}
+        store.save(latest)
         return {"image_id": image_id}
 
     return run

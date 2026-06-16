@@ -40,3 +40,20 @@ def test_stack_result_records_frame_count(tmp_path):
     results = [img for img in proj["images"].values() if img.get("kind") == "result"]
     assert results, proj["images"]
     assert results[0]["frames"] == 3
+
+
+def test_multiple_stack_jobs_each_persist_a_result(tmp_path):
+    # Two algorithms enqueued back-to-back must both keep their result image.
+    # (Regression: each runner held a stale Project snapshot and clobbered the
+    # other's result on save.)
+    c, pid = _proj_with_frames(tmp_path, n=3)
+    jids = [
+        c.post(f"/api/projects/{pid}/jobs",
+               json={"type": "stack", "params": {"method": m, "device": "cpu"}}).json()["id"]
+        for m in ("pmax", "weighted")
+    ]
+    for jid in jids:
+        assert _wait_job(c, jid)["status"] == "done"
+    proj = c.get(f"/api/projects/{pid}").json()
+    methods = sorted(img["method"] for img in proj["images"].values() if img.get("kind") == "result")
+    assert methods == ["pmax", "weighted"], proj["images"]
