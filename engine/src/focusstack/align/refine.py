@@ -26,11 +26,12 @@ def _ecc_at_level(a: np.ndarray, b: np.ndarray, warp_init: np.ndarray,
 
 
 def refine_ecc(a: np.ndarray, b: np.ndarray, init: np.ndarray,
-               cx: float, cy: float, levels: int = 3) -> tuple[np.ndarray, float]:
-    """Refine the b->a alignment with a 3-level ECC pyramid warm-started from
+               cx: float, cy: float, levels: int = 3, iters: int = 100) -> tuple[np.ndarray, float]:
+    """Refine the b->a alignment with an ECC pyramid warm-started from
     `init` (3x3 output->input). Returns (3x3 similarity matrix, ECC correlation).
 
-    a, b: float32 (h, w) luminance proxies in [0, 1].
+    a, b: float32 (h, w) luminance images in [0, 1]. `levels=1` does a single
+    solve at the input resolution (used for the warm-started full-res polish).
     """
     a = np.ascontiguousarray(a, dtype=np.float32)
     b = np.ascontiguousarray(b, dtype=np.float32)
@@ -45,7 +46,7 @@ def refine_ecc(a: np.ndarray, b: np.ndarray, init: np.ndarray,
     cc = 0.0
     for lvl, (la, lb) in enumerate(zip(pyr_a, pyr_b)):
         try:
-            warp, cc = _ecc_at_level(la, lb, warp, iters=100, eps=1e-5)
+            warp, cc = _ecc_at_level(la, lb, warp, iters=iters, eps=1e-5)
         except cv2.error:
             cc = 0.0
         if lvl < len(pyr_a) - 1:

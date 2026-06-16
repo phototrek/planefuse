@@ -11,7 +11,24 @@ from focusstack.backend import Device, ops
 from focusstack.align.initial import estimate_scale_rotation, estimate_translation
 from focusstack.align.proxy import make_proxy
 from focusstack.align.refine import brightness_gain, refine_ecc
-from focusstack.align.transforms import similarity_matrix, translation_matrix
+from focusstack.align.transforms import (
+    scale_transform_to_resolution,
+    similarity_matrix,
+    translation_matrix,
+)
+
+# Rec. 709 luma weights (R, G, B), matching ops.rgb_to_luminance.
+_LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+
+
+def _luminance_full(frame: np.ndarray) -> np.ndarray:
+    """(H, W, 3) float32 RGB -> contiguous (H, W) float32 luminance for ECC."""
+    return np.ascontiguousarray(frame.astype(np.float32) @ _LUMA)
+
+
+def _scale_ok(m: np.ndarray) -> bool:
+    """Similarity scale physically plausible for a focus stack (sub-percent breathing)."""
+    return 0.8 < float(np.sqrt(abs(np.linalg.det(m[:2, :2])))) < 1.25
 
 
 @dataclass
@@ -28,8 +45,14 @@ def _to_tensor3(m: np.ndarray, device: Device) -> torch.Tensor:
 
 def estimate_pair(frame_a: np.ndarray, frame_b: np.ndarray, device: Device,
                   max_long_edge: int = 2048, model: str = "similarity",
-                  normalize_brightness: bool = True) -> PairResult:
-    """Estimate the transform warping frame_b onto frame_a (consecutive pair)."""
+                  normalize_brightness: bool = True,
+                  refine_full_res: bool = False) -> PairResult:
+    """Estimate the transform warping frame_b onto frame_a (consecutive pair).
+
+    With `refine_full_res`, a warm-started ECC polish is run at the frames' native
+    resolution and the returned matrix is full-res (proxy_factor 1.0), recovering
+    the sub-pixel precision otherwise lost when scaling a small-proxy estimate up.
+    """
     pa, factor = make_proxy(frame_a, device, max_long_edge)
     pb, _ = make_proxy(frame_b, device, max_long_edge)
     h, w = pa.shape[-2:]
@@ -57,12 +80,28 @@ def estimate_pair(frame_a: np.ndarray, frame_b: np.ndarray, device: Device,
     # is sub-percent (focus breathing), so a similarity scale far from 1.0 is
     # physically impossible — reject it, fall back to the gentler initial guess,
     # and report zero correlation so the quality gate can flag/drop the pair.
-    sc = float(np.sqrt(abs(np.linalg.det(m[:2, :2]))))
-    if not (0.8 < sc < 1.25):
+    if not _scale_ok(m):
         m = init.copy()
         if model == "translation":
             m[:2, :2] = np.eye(2)
         corr = 0.0
+
+    # Full-res polish: scale the proxy estimate up and run one warm-started ECC
+    # solve at native resolution. Every pair returns a full-res matrix so the
+    # chain stays consistent; a diverged polish falls back to the scaled proxy.
+    if refine_full_res and factor > 1.0:
+        m_full = scale_transform_to_resolution(m, factor)
+        la, lb = _luminance_full(frame_a), _luminance_full(frame_b)
+        fh, fw = la.shape
+        cxf, cyf = (fw - 1) / 2.0, (fh - 1) / 2.0
+        m_ref, corr_ref = refine_ecc(la, lb, init=m_full, cx=cxf, cy=cyf, levels=1, iters=50)
+        if model == "translation":
+            m_ref[:2, :2] = np.eye(2)
+        if _scale_ok(m_ref):
+            m, corr = m_ref, corr_ref
+        else:
+            m = m_full  # rejected polish: keep the scaled proxy estimate (and its corr)
+        factor = 1.0
 
     gain = 1.0
     if normalize_brightness:

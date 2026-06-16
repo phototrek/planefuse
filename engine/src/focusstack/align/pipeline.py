@@ -28,6 +28,7 @@ class AlignParams:
     reference: int | None = None
     drop_misaligned: bool = False
     skip: bool = False
+    refine_full_res: bool = False  # warm-started ECC polish at native resolution
 
 
 @dataclass
@@ -38,6 +39,7 @@ class AlignReport:
     flagged: set[int]
     dropped: set[int]
     cache: AlignedCache
+    proxy_factor: float  # resolution of `matrices`: 1.0 when full-res-refined
 
 
 def align_stack(source: FrameSource, cache_dir: Path, device: Device,
@@ -60,7 +62,7 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
             _tick(idx, f"copy {idx + 1}/{n}")
             frame = source.read(idx)
             cache.write(idx, frame, np.ones(frame.shape[:2], dtype=bool))
-        return AlignReport(ref, [np.eye(3) for _ in range(n)], {}, set(), set(), cache)
+        return AlignReport(ref, [np.eye(3) for _ in range(n)], {}, set(), set(), cache, 1.0)
 
     # estimate consecutive pairs (i, i+1): transform maps (i+1) -> i
     pair: dict[int, np.ndarray] = {}
@@ -70,7 +72,8 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
         _tick(i, f"estimate pair {i + 1}/{n - 1}")
         pr = estimate_pair(source.read(i), source.read(i + 1), device,
                            max_long_edge=params.max_long_edge, model=params.model,
-                           normalize_brightness=params.normalize_brightness)
+                           normalize_brightness=params.normalize_brightness,
+                           refine_full_res=params.refine_full_res)
         pair[i] = pr.matrix
         corr[i] = pr.correlation
         factor = pr.proxy_factor
@@ -132,7 +135,8 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
                 pr = estimate_pair(source.read(s_prev), source.read(s_next), device,
                                    max_long_edge=params.max_long_edge,
                                    model=params.model,
-                                   normalize_brightness=params.normalize_brightness)
+                                   normalize_brightness=params.normalize_brightness,
+                                   refine_full_res=params.refine_full_res)
                 eff_pair[j] = pr.matrix
 
         sub = chain_to_reference(len(survivors), eff_pair,
@@ -155,4 +159,4 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
 
     if progress is not None:
         progress("done", 1.0)
-    return AlignReport(ref, matrices, corr, chain.flagged, dropped, cache)
+    return AlignReport(ref, matrices, corr, chain.flagged, dropped, cache, factor)

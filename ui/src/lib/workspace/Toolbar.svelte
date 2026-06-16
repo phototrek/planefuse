@@ -12,6 +12,7 @@
   let values = $state<Record<string, unknown>>({});  // tuned params, only when exactly one selected
   let useAlign = $state(true);
   let maxLongEdge = $state(2048);
+  let useRefineFullRes = $state(false);
   let useSelect = $state(false);
   let presets = $state<{ name: string; params: Record<string, unknown> }[]>([]);
   let presetName = $state('');
@@ -80,7 +81,7 @@
       device: appState.system?.device ?? 'auto',
       algo_params: selected.length === 1 && selected[0] === name ? values : defaultsFor(name)
     };
-    if (useAlign) params.align = { max_long_edge: maxLongEdge };
+    if (useAlign) params.align = { max_long_edge: maxLongEdge, refine_full_res: useRefineFullRes };
     if (useSelect) params.select = {};
     return params;
   }
@@ -90,7 +91,7 @@
     await api.addPreset(presetName, {
       methods: selected,
       algo_params: values,
-      align: useAlign ? { max_long_edge: maxLongEdge } : undefined,
+      align: useAlign ? { max_long_edge: maxLongEdge, refine_full_res: useRefineFullRes } : undefined,
       select: useSelect ? {} : undefined
     });
     presets = await api.listPresets();
@@ -109,7 +110,11 @@
       if (p.params.algo_params) values = { ...(p.params.algo_params as Record<string, unknown>) };
     }
     useAlign = !!p.params.align;
-    if (p.params.align) maxLongEdge = (p.params.align as { max_long_edge: number }).max_long_edge;
+    if (p.params.align) {
+      const a = p.params.align as { max_long_edge: number; refine_full_res?: boolean };
+      maxLongEdge = a.max_long_edge;
+      useRefineFullRes = !!a.refine_full_res;
+    }
     useSelect = !!p.params.select;
   }
 
@@ -399,6 +404,12 @@
       <input class="num" type="number" bind:value={maxLongEdge} min="128" max="8192" step="1" />
     {/if}
   </label>
+  {#if useAlign}
+    <label class="toggle" title="Polish each alignment at native resolution (CPU; slower, sub-pixel — good for high-MP sensors)">
+      <input type="checkbox" bind:checked={useRefineFullRes} data-testid="align-refine-full" />
+      <span>Full-res refine</span>
+    </label>
+  {/if}
   <label class="toggle">
     <input type="checkbox" bind:checked={useSelect} />
     <span>Smart frame selection</span>
