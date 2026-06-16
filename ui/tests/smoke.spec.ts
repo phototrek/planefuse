@@ -91,8 +91,12 @@ test('workspace: add -> PMax -> view -> export', async ({ page }) => {
   await page.getByTestId('ws-result').first().click();
   await expect(page.getByTestId('viewer-tile').first()).toBeVisible({ timeout: 30_000 });
 
+  // Name the project so the template preview reflects it.
+  await page.getByTestId('ws-project-name').fill('E2E');
+
   // Export: open export popover, fill dest, confirm, wait for done.
   await page.getByTestId('ws-export').click();
+  await expect(page.getByTestId('export-preview')).toHaveText(/E2E_pmax\.tif/);
   await page.getByTestId('export-dest').fill(outFile);
   const exportResponse = page.waitForResponse(
     (r) => r.request().method() === 'POST' && r.url().endsWith('/export')

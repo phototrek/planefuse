@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api, type Algorithm } from '$lib/api';
   import { appState } from '$lib/stores.svelte';
+  import { applyTemplate, todayISO, type TemplateCtx } from './template';
   import ParamForm from '$lib/components/ParamForm.svelte';
   import FolderBrowser from '$lib/components/FolderBrowser.svelte';
 
@@ -21,7 +22,7 @@
 
   // ── Export popover state ─────────────────────────────────────────────────────
   let exportFolder = $state('');
-  let exportStem = $state('stacked');
+  let exportTemplate = $state('{stack_name}_{method}');
   let exportFormat = $state<'tif' | 'jpg' | 'png'>('tif');
   let exportBitDepth = $state(16);
   let exportJpegQuality = $state(95);
@@ -124,7 +125,28 @@
   }
 
   // ── Export ───────────────────────────────────────────────────────────────────
-  let exportFilename = $derived(`${exportStem || 'stacked'}.${exportFormat}`);
+
+  // Load the persisted template when the project changes.
+  $effect(() => {
+    const t = appState.project?.ui_state?.exportTemplate;
+    if (typeof t === 'string' && t) exportTemplate = t;
+  });
+
+  function exportCtx(): TemplateCtx {
+    const id = getExportImageId();
+    const idx = appState.results.findIndex((r) => r.id === id);
+    const result = idx >= 0 ? appState.results[idx] : undefined;
+    return {
+      stack_name: projectName || 'stacked',
+      method: result?.method ?? '',
+      frames: result?.frames,
+      date: todayISO(),
+      seq: (idx >= 0 ? idx : 0) + 1
+    };
+  }
+
+  let exportStem = $derived(applyTemplate(exportTemplate, exportCtx()) || 'stacked');
+  let exportFilename = $derived(`${exportStem}.${exportFormat}`);
 
   let exportAutoDest = $derived.by(() => {
     if (!exportFolder) return '';
@@ -159,6 +181,7 @@
       };
       const r = await api.export(appState.project.id, body);
       appState.exportJobId = r.id;
+      api.patchUiState(appState.project.id, { exportTemplate }).catch(() => {});
       showExport = false;
     } catch (e) {
       exportError = (e as Error).message;
@@ -296,10 +319,12 @@
                 <input type="number" bind:value={exportJpegQuality} min="1" max="100" />
               </label>
             {/if}
-            <label>
-              <span class="lbl">Filename</span>
-              <input type="text" bind:value={exportStem} />
+            <label class="tpl">
+              <span class="lbl">Name template</span>
+              <input type="text" bind:value={exportTemplate} data-testid="export-template" />
             </label>
+            <div class="tpl-preview faint mono" data-testid="export-preview">{exportFilename}</div>
+            <div class="tpl-hint faint">{`{stack_name} {method} {frames} {date} {seq}`}</div>
           </div>
           <div class="dest-row">
             <span class="lbl">Output folder</span>
@@ -467,4 +492,6 @@
   .preset-chip { display: flex; align-items: center; border: 1px solid var(--line); border-radius: var(--radius); }
   .del { color: var(--text-faint); padding: 5px 7px; }
   .err { color: var(--bad); font-size: 11px; }
+  .tpl-preview { font-size: 11px; font-family: var(--font-mono); color: var(--text-faint); grid-column: 1 / -1; }
+  .tpl-hint { font-size: 10px; color: var(--text-faint); grid-column: 1 / -1; letter-spacing: 0.02em; }
 </style>
