@@ -1,10 +1,10 @@
 {
   "planPath": "docs/superpowers/plans/2026-06-16-export-naming-templates.md",
   "tasks": [
-    {"id": 1, "subject": "Task 1: Record frame count in stack result metadata", "status": "pending"},
-    {"id": 2, "subject": "Task 2: applyTemplate pure helper + unit test", "status": "pending"},
-    {"id": 3, "subject": "Task 3: Wire template field into Toolbar export popover", "status": "pending", "blockedBy": [1, 2]},
-    {"id": 4, "subject": "Task 4: Full gate + finish branch", "status": "pending", "blockedBy": [3]}
+    {"id": 1, "subject": "Task 1: Record frame count in stack result metadata", "status": "completed"},
+    {"id": 2, "subject": "Task 2: applyTemplate pure helper + unit test", "status": "completed"},
+    {"id": 3, "subject": "Task 3: Wire template field into Toolbar export popover", "status": "completed", "blockedBy": [1, 2]},
+    {"id": 4, "subject": "Task 4: Full gate + finish branch", "status": "completed", "blockedBy": [3]}
   ],
-  "lastUpdated": "2026-06-16T00:00:00Z"
+  "lastUpdated": "2026-06-16T12:00:00Z"
 }
