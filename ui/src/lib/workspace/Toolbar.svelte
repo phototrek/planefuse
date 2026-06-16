@@ -8,8 +8,8 @@
 
   // ── Algorithm + params ──────────────────────────────────────────────────────
   let algos = $state<Algorithm[]>([]);
-  let method = $state('pmax');
-  let values = $state<Record<string, unknown>>({});
+  let selected = $state<string[]>([]);   // algos toggled to run; ≥1 required
+  let values = $state<Record<string, unknown>>({});  // tuned params, only when exactly one selected
   let useAlign = $state(true);
   let maxLongEdge = $state(2048);
   let useSelect = $state(false);
@@ -39,7 +39,8 @@
   let runError = $state('');
   let exportError = $state('');
 
-  let current = $derived(algos.find((a) => a.name === method));
+  // Param tuning is offered only when exactly one algo is selected.
+  let current = $derived(selected.length === 1 ? algos.find((a) => a.name === selected[0]) : undefined);
   let projectName = $derived(projectNameOverride ?? appState.project?.name ?? '');
 
   function resetValues(a: Algorithm | undefined) {
@@ -48,26 +49,36 @@
     values = v;
   }
 
-  function pickMethod(name: string) {
-    method = name;
-    resetValues(algos.find((a) => a.name === name));
+  function toggleAlgo(name: string) {
+    selected = selected.includes(name)
+      ? selected.filter((n) => n !== name)
+      : [...selected, name];
+    // When exactly one is selected, load its defaults so it can be tuned.
+    if (selected.length === 1) resetValues(algos.find((a) => a.name === selected[0]));
+  }
+
+  function defaultsFor(name: string): Record<string, unknown> {
+    const v: Record<string, unknown> = {};
+    for (const p of algos.find((a) => a.name === name)?.params ?? []) v[p.name] = p.default;
+    return v;
   }
 
   onMount(async () => {
     try {
       algos = await api.algorithms();
-      resetValues(algos.find((a) => a.name === method));
       presets = await api.listPresets();
     } catch (e) {
       runError = (e as Error).message;
     }
   });
 
-  function buildParams(): Record<string, unknown> {
+  // One algo's job params. Tuned `values` apply only when it's the sole selected
+  // algo; in multi-select every algo runs with its defaults.
+  function buildParamsFor(name: string): Record<string, unknown> {
     const params: Record<string, unknown> = {
-      method,
+      method: name,
       device: appState.system?.device ?? 'auto',
-      algo_params: values
+      algo_params: selected.length === 1 && selected[0] === name ? values : defaultsFor(name)
     };
     if (useAlign) params.align = { max_long_edge: maxLongEdge };
     if (useSelect) params.select = {};
@@ -76,14 +87,27 @@
 
   async function savePreset() {
     if (!presetName) return;
-    await api.addPreset(presetName, buildParams());
+    await api.addPreset(presetName, {
+      methods: selected,
+      algo_params: values,
+      align: useAlign ? { max_long_edge: maxLongEdge } : undefined,
+      select: useSelect ? {} : undefined
+    });
     presets = await api.listPresets();
     presetName = '';
   }
 
   function loadPreset(p: { params: Record<string, unknown> }) {
-    if (typeof p.params.method === 'string') pickMethod(p.params.method);
-    if (p.params.algo_params) values = { ...(p.params.algo_params as Record<string, unknown>) };
+    // New presets store `methods` (array); legacy presets store a single `method`.
+    selected = Array.isArray(p.params.methods)
+      ? (p.params.methods as string[])
+      : typeof p.params.method === 'string'
+        ? [p.params.method]
+        : [];
+    if (selected.length === 1) {
+      resetValues(algos.find((a) => a.name === selected[0]));
+      if (p.params.algo_params) values = { ...(p.params.algo_params as Record<string, unknown>) };
+    }
     useAlign = !!p.params.align;
     if (p.params.align) maxLongEdge = (p.params.align as { max_long_edge: number }).max_long_edge;
     useSelect = !!p.params.select;
@@ -96,12 +120,16 @@
 
   // ── Run ──────────────────────────────────────────────────────────────────────
   async function run() {
-    if (!appState.project) return;
+    if (!appState.project || selected.length === 0) return;
     runError = '';
     try {
-      const res = await api.enqueueStack(appState.project.id, buildParams());
-      appState.stackJobIds = [...appState.stackJobIds, res.id];
-      appState.viewer = { kind: 'job', id: res.id };
+      let firstId: string | null = null;
+      for (const name of selected) {
+        const res = await api.enqueueStack(appState.project.id, buildParamsFor(name));
+        appState.stackJobIds = [...appState.stackJobIds, res.id];
+        if (!firstId) firstId = res.id;
+      }
+      if (firstId) appState.viewer = { kind: 'job', id: firstId };
       appState.drawerOpen = true;
     } catch (e) {
       runError = (e as Error).message;
@@ -115,8 +143,10 @@
     try {
       const { groups } = await api.autoGroup(appState.project.id);
       for (const g of groups) {
-        const res = await api.enqueueStack(appState.project.id, { ...buildParams(), frames: g });
-        appState.stackJobIds = [...appState.stackJobIds, res.id];
+        for (const name of selected) {
+          const res = await api.enqueueStack(appState.project.id, { ...buildParamsFor(name), frames: g });
+          appState.stackJobIds = [...appState.stackJobIds, res.id];
+        }
       }
       appState.drawerOpen = true;
     } catch (e) {
@@ -244,9 +274,11 @@
       {#each algos as a (a.name)}
         <button
           class="algo"
-          class:sel={method === a.name}
+          class:sel={selected.includes(a.name)}
           data-testid="algo-{a.name}"
-          onclick={() => pickMethod(a.name)}
+          aria-pressed={selected.includes(a.name)}
+          title="Toggle {a.name} — run several at once"
+          onclick={() => toggleAlgo(a.name)}
         >{a.name}</button>
       {/each}
     </div>
@@ -262,16 +294,17 @@
     <button
       class="primary"
       data-testid="ws-run"
-      disabled={!appState.project || appState.inputs.length === 0}
+      disabled={!appState.project || appState.inputs.length === 0 || selected.length === 0}
+      title={selected.length === 0 ? 'Select at least one algorithm' : `Run ${selected.length} algorithm(s)`}
       onclick={run}
     >
-      Run
+      Run{selected.length > 1 ? ` ×${selected.length}` : ''}
     </button>
 
     <button
       class="ghost"
       data-testid="ws-autogroup"
-      disabled={!appState.project || appState.inputs.length === 0}
+      disabled={!appState.project || appState.inputs.length === 0 || selected.length === 0}
       onclick={autoGroup}
     >
       Auto-group
@@ -379,6 +412,11 @@
       <div class="params-section">
         <p class="eyebrow">Parameters</p>
         <ParamForm specs={current.params} bind:values />
+      </div>
+    {:else if selected.length > 1}
+      <div class="params-section">
+        <p class="eyebrow">Parameters</p>
+        <p class="faint">{selected.length} algorithms selected — each runs with its default parameters.</p>
       </div>
     {/if}
 

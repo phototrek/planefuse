@@ -122,6 +122,27 @@ test('workspace: add -> PMax -> view -> export', async ({ page }) => {
   );
 });
 
+test('workspace: multi-select runs one stack per toggled algorithm', async ({ page }) => {
+  const work = tempWork('fs-multi-e2e-');
+  const frames = join(work, 'frames');
+  execSync(`uv run --project .. python tests/fixtures/make_stack.py "${frames}"`, {
+    stdio: 'inherit'
+  });
+
+  await page.goto('/');
+  await page.getByTestId('ws-add').click();
+  await page.getByTestId('scan-path').fill(frames);
+  await page.getByTestId('ws-add-confirm').click();
+  await expect(page.getByTestId('ws-input').first()).toBeVisible();
+
+  // Toggle two algorithms; Run should enqueue one stack each → two results.
+  await page.getByTestId('algo-pmax').click();
+  await page.getByTestId('algo-weighted').click();
+  await page.getByTestId('ws-run').click();
+
+  await expect(page.getByTestId('ws-result')).toHaveCount(2, { timeout: 90_000 });
+});
+
 test('workspace: retouch result -> paint -> undo/redo -> flatten -> export', async ({ page }) => {
   test.setTimeout(5 * 60_000);
   const work = tempWork('fs-retouch-e2e-');
@@ -141,8 +162,11 @@ test('workspace: retouch result -> paint -> undo/redo -> flatten -> export', asy
   await page.getByTestId('ws-add-confirm').click();
   await expect(page.getByTestId('ws-input').first()).toBeVisible();
 
-  // Stack pmax and weighted in sequence.
+  // Stack pmax and weighted as two separate single-algo runs. Algo buttons are
+  // toggles, so deselect the previous method before selecting the next.
+  let prev: string | null = null;
   for (const method of ['pmax', 'weighted']) {
+    if (prev) await page.getByTestId(`algo-${prev}`).click();
     await page.getByTestId(`algo-${method}`).click();
     const response = page.waitForResponse(
       (r) => r.request().method() === 'POST' && r.url().endsWith('/jobs')
@@ -150,6 +174,7 @@ test('workspace: retouch result -> paint -> undo/redo -> flatten -> export', asy
     await page.getByTestId('ws-run').click();
     const jobId = ((await (await response).json()) as { id: string }).id;
     await waitForJob(page, jobId);
+    prev = method;
   }
 
   // Select the first result and launch retouch from it.
