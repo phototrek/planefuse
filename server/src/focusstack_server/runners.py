@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from focusstack.align import AlignParams
-from focusstack.io import load_image, save_image
+from focusstack.errors import ValidationError
+from focusstack.io import load_image, save_image, validate_stack
 from focusstack.pipeline import stack_frames
 from focusstack.select import SelectParams
 from focusstack_server.projects import Project, ProjectStore
@@ -24,19 +25,33 @@ def make_stack_runner(store: ProjectStore, proj: Project, params: dict[str, Any]
     algo_params = params.get("algo_params", {})
 
     def run(progress: Callable[[str, float], None], cancel: Callable[[], bool]) -> dict:
-        result = stack_frames(paths, method=method, params=algo_params, device_pref=device,
+        # Auto-skip frames that don't match the stack (size/format mismatch) and
+        # stack the rest, instead of failing the whole job. The engine still
+        # hard-fails on its own; this is the UI's resilient path.
+        report = validate_stack(paths)
+        frames = paths
+        if not report.ok:
+            frames = [Path(s.path) for s in report.files if s.status == "ok"]
+            skipped = [s for s in report.files if s.status != "ok"]
+            shown = ", ".join(s.path.name for s in skipped[:8])
+            more = "" if len(skipped) <= 8 else f" (+{len(skipped) - 8} more)"
+            progress(f"skipped {len(skipped)} mismatched frame(s): {shown}{more}", 0.0)
+            if len(frames) < 2:
+                detail = "\n  ".join(f"{s.path.name}: {s.status}" for s in skipped)
+                raise ValidationError("no usable frames after skipping mismatched:\n  " + detail)
+        result = stack_frames(frames, method=method, params=algo_params, device_pref=device,
                               align=align, select=select, cache_dir=proj.cache,
                               progress=progress, cancel=cancel)
         image_id = uuid.uuid4().hex[:12]
         out_path = proj.cache / f"{image_id}.tif"
-        icc = load_image(paths[len(paths) // 2]).icc
+        icc = load_image(frames[len(frames) // 2]).icc
         save_image(result.image, out_path, bit_depth=16, icc=icc)
         # Reload the latest project before recording the result: another job may
         # have added images since this runner captured `proj` at enqueue time,
         # and store.save writes the whole project.json (would clobber them).
         latest = store.get(proj.id) or proj
         latest.images[image_id] = {"kind": "result", "path": str(out_path),
-                                   "method": method, "frames": len(paths)}
+                                   "method": method, "frames": len(frames)}
         if "depth" in result.aux:
             depth_id = uuid.uuid4().hex[:12]
             dpath = proj.cache / f"{depth_id}.tif"
