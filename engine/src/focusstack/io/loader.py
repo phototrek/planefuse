@@ -78,13 +78,39 @@ def load_image(path: Path) -> Frame:
     return Frame(pixels, depth, bytes(icc) if icc else None, path)
 
 
+def probe_image(path: Path) -> tuple[int, int, int]:
+    """(width, height, bit_depth) from the file header only — no pixel decode.
+    Validation only needs dimensions/format, and these files are hundreds of MB;
+    decoding every one on each add/remove was the UI lag. Raises ValidationError
+    for unsupported/non-RGB and OSError-family for corrupt headers; deep pixel
+    corruption still surfaces later at load_image time."""
+    path = Path(path)
+    suffix = path.suffix.lower()
+    if suffix not in SUPPORTED:
+        raise ValidationError(f"{path.name}: unsupported format {suffix}")
+    if suffix in (".tif", ".tiff"):
+        with tifffile.TiffFile(path) as tf:
+            page = tf.pages[0]
+            if int(page.samplesperpixel) != 3:
+                raise ValidationError(f"{path.name}: RGB input required (got {page.samplesperpixel} channels)")
+            bps = page.bitspersample
+            bps = int(bps[0] if isinstance(bps, tuple) else bps)
+            if bps not in (8, 16):
+                raise ValidationError(f"unsupported sample type {bps}-bit; expected uint8 or uint16")
+            return int(page.imagewidth), int(page.imagelength), bps
+    with Image.open(path) as im:  # PIL opens lazily — size/mode read without decoding pixels
+        if im.mode != "RGB":
+            raise ValidationError(f"{path.name}: RGB input required (got mode {im.mode})")
+        return im.width, im.height, 8
+
+
 def validate_stack(paths: list[Path]) -> ValidationReport:
     """Per-file validation report (SPEC §12). Never raises for bad files."""
     report = ValidationReport()
     for p in paths:
         p = Path(p)
         try:
-            frame = load_image(p)
+            w, h, depth = probe_image(p)
         except ValidationError as e:
             if p.suffix.lower() not in SUPPORTED:
                 kind = "unsupported"
@@ -97,13 +123,12 @@ def validate_stack(paths: list[Path]) -> ValidationReport:
         except Exception as e:  # noqa: BLE001 - corrupted files land here by design
             report.files.append(FileStatus(p, "unreadable", str(e)))
             continue
-        h, w = frame.pixels.shape[:2]
         if report.width == 0:
-            report.width, report.height, report.bit_depth = w, h, frame.bit_depth
+            report.width, report.height, report.bit_depth = w, h, depth
         if (w, h) != (report.width, report.height):
             report.files.append(FileStatus(p, "wrong_size", f"{w}x{h} != {report.width}x{report.height}"))
-        elif frame.bit_depth != report.bit_depth:
-            report.files.append(FileStatus(p, "wrong_bit_depth", f"{frame.bit_depth} != {report.bit_depth}"))
+        elif depth != report.bit_depth:
+            report.files.append(FileStatus(p, "wrong_bit_depth", f"{depth} != {report.bit_depth}"))
         else:
             report.files.append(FileStatus(p, "ok"))
     return report

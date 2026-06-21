@@ -47,22 +47,31 @@
     if (folder) addPaths([folder]);
   }
 
-  async function removeFrame(path: string) {
-    if (!appState.project) return;
+  async function removeFrames(paths: string[]) {
+    if (!appState.project || paths.length === 0) return;
     error = '';
+    busy = true;
     try {
-      const report = await api.removeFrames(appState.project.id, [path]);
+      const report = await api.removeFrames(appState.project.id, paths);
       appState.inputs = report.files;
       appState.project = await api.getProject(appState.project.id);
-      // If the removed frame was the active viewer target, clear it.
-      if (appState.viewer?.kind === 'input' && appState.viewer.path === path) {
+      // If the active viewer target was removed, fall back to the first frame.
+      if (appState.viewer?.kind === 'input' && paths.includes(appState.viewer.path)) {
         appState.viewer = appState.inputs.length > 0
           ? { kind: 'input', path: appState.inputs[0].path }
           : null;
       }
     } catch (e) {
       error = (e as Error).message;
+    } finally {
+      busy = false;
     }
+  }
+
+  // Drop every frame the server flagged (wrong_size, wrong_bit_depth, etc.) in one call.
+  let badCount = $derived(appState.inputs.filter((f) => f.status !== 'ok').length);
+  function removeInvalid() {
+    removeFrames(appState.inputs.filter((f) => f.status !== 'ok').map((f) => f.path));
   }
 
   function selectInput(path: string) {
@@ -134,6 +143,17 @@
     </div>
   {/if}
 
+  {#if badCount > 0}
+    <div class="report-row">
+      <button
+        class="ghost remove-invalid"
+        data-testid="remove-invalid"
+        disabled={busy}
+        onclick={removeInvalid}
+      >✕ Remove {badCount} mismatched {badCount === 1 ? 'frame' : 'frames'}</button>
+    </div>
+  {/if}
+
   <div class="frames">
     {#each appState.inputs as f (f.path)}
       <div
@@ -155,7 +175,7 @@
         <button
           class="ghost remove-btn"
           title="Remove"
-          onclick={(e) => { e.stopPropagation(); removeFrame(f.path); }}
+          onclick={(e) => { e.stopPropagation(); removeFrames([f.path]); }}
         >✕</button>
       </div>
     {:else}
@@ -233,6 +253,7 @@
     text-transform: uppercase;
     flex-shrink: 0;
   }
+  .remove-invalid { font-size: 11px; padding: 5px 10px; color: var(--bad); width: 100%; }
   .remove-btn {
     font-size: 11px;
     padding: 3px 6px;
