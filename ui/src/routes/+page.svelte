@@ -26,10 +26,18 @@
       }));
   }
 
+  const PROJECT_KEY = 'focusstack:projectId';
+
   onMount(async () => {
     try {
       if (!appState.project) {
-        appState.project = await api.createScratchProject();
+        // Reload the last project across a page refresh; only make a new scratch
+        // project if there's no saved id or it no longer exists server-side.
+        const savedId = localStorage.getItem(PROJECT_KEY);
+        if (savedId) {
+          try { appState.project = await api.getProject(savedId); } catch { /* stale id */ }
+        }
+        if (!appState.project) appState.project = await api.createScratchProject();
       }
       if (appState.project.frames.length > 0 && appState.inputs.length === 0) {
         const report = await api.addFrames(appState.project.id, []);
@@ -38,9 +46,23 @@
       if (appState.results.length === 0) {
         appState.results = buildResults(appState.project.images);
       }
+      // Re-attach to jobs from before the refresh (running stack, exports) so the
+      // drawer shows them, and re-arm result discovery for any still-running stack.
+      if (Object.keys(appState.jobs).length === 0) {
+        const jobs = await api.listJobs();
+        for (const j of jobs) appState.jobs[j.id] = j;
+        appState.stackJobIds = jobs
+          .filter((j) => j.type === 'stack' && (j.status === 'running' || j.status === 'pending'))
+          .map((j) => j.id);
+      }
     } catch (e) {
       initError = (e as Error).message;
     }
+  });
+
+  // Remember the active project so a refresh restores it instead of starting blank.
+  $effect(() => {
+    if (appState.project?.id) localStorage.setItem(PROJECT_KEY, appState.project.id);
   });
 
   // Result discovery: when a tracked stack job finishes, re-fetch the project
