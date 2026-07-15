@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 const PORT = 8525; // dedicated test port
+const DEVICE = process.env.FOCUSSTACK_E2E_DEVICE ?? 'cpu';
 
 export default defineConfig({
   testDir: './tests',
@@ -10,6 +11,7 @@ export default defineConfig({
     // Build the UI into the server static dir, then serve via the real server.
     command: `npm run build && uv run --project .. python tests/fixtures/serve_test.py ${PORT}`,
     url: `http://127.0.0.1:${PORT}/api/system`,
+    env: { ...process.env, FOCUSSTACK_DEVICE: DEVICE },
     reuseExistingServer: false,
     timeout: 180_000
   }

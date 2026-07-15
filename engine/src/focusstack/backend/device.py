@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 
 import torch
@@ -24,6 +25,13 @@ class Device:
 def get_device(prefer: str = "auto") -> Device:
     if prefer not in _VALID:
         raise ValueError(f"unknown device preference {prefer!r}; expected one of {_VALID}")
+    if prefer == "auto":
+        configured = os.getenv("FOCUSSTACK_DEVICE", "auto").strip().lower()
+        if configured not in _VALID:
+            raise ValueError(
+                f"unknown FOCUSSTACK_DEVICE value {configured!r}; expected one of {_VALID}"
+            )
+        prefer = configured
     if prefer in ("auto", "cuda") and torch.cuda.is_available():
         d = Device("cuda", torch.device("cuda:0"), torch.cuda.get_device_name(0))
         log.info("using device: %s (%s)", d.kind, d.name)

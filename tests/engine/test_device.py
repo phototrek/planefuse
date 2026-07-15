@@ -17,6 +17,24 @@ def test_auto_returns_a_device():
     assert d.kind in ("cuda", "mps", "cpu")
 
 
+def test_environment_preference_controls_auto(monkeypatch):
+    monkeypatch.setenv("FOCUSSTACK_DEVICE", "cpu")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    assert get_device("auto").kind == "cpu"
+
+
+def test_explicit_preference_ignores_environment(monkeypatch):
+    monkeypatch.setenv("FOCUSSTACK_DEVICE", "cpu")
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    assert get_device("mps").kind == "mps"
+
+
+def test_invalid_environment_preference_raises_for_auto(monkeypatch):
+    monkeypatch.setenv("FOCUSSTACK_DEVICE", "tpu")
+    with pytest.raises(ValueError, match="FOCUSSTACK_DEVICE"):
+        get_device("auto")
+
+
 def test_unknown_preference_raises():
     with pytest.raises(ValueError):
         get_device("tpu")
