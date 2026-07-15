@@ -9,6 +9,7 @@ import platform
 import time
 
 import numpy as np
+import torch
 
 from focusstack.backend import get_device
 from focusstack.stack import ArrayFrameSource, get_algorithm
@@ -51,6 +52,8 @@ def main() -> None:
                 "device": device.kind,
                 "device_name": device.name,
                 "platform": platform.platform(),
+                "python_version": platform.python_version(),
+                "torch_version": torch.__version__,
                 "height": args.height,
                 "width": args.width,
                 "frames": args.frames,

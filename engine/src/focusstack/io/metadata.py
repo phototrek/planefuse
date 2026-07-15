@@ -235,6 +235,44 @@ def metadata_from_pillow(path: Path, image: Image.Image) -> ImageMetadata:
     )
 
 
+def capture_time_from_file(path: Path) -> str | None:
+    """Read capture time without decoding full-resolution image pixels."""
+
+    path = Path(path)
+    portable = read_metadata(path)
+    for key in (
+        "Exif.Photo.DateTimeOriginal",
+        "Exif.Image.DateTime",
+        "Exif.Photo.DateTimeDigitized",
+    ):
+        value = portable.exif.get(key)
+        if value not in (None, ""):
+            return str(value)
+
+    if path.suffix.lower() in {".tif", ".tiff", ".jpg", ".jpeg", ".png"}:
+        try:
+            with Image.open(path) as image:
+                exif = image.getexif()
+                value = exif.get(36867) or exif.get(306) or exif.get(36868)
+                if value not in (None, ""):
+                    return str(value)
+        except Exception:  # noqa: BLE001 - absence/corruption falls through to ExifRead
+            pass
+
+    try:
+        import exifread
+
+        with path.open("rb") as stream:
+            tags = exifread.process_file(stream, details=False, extract_thumbnail=False, strict=False)
+        for key in ("EXIF DateTimeOriginal", "Image DateTime", "EXIF DateTimeDigitized"):
+            value = tags.get(key)
+            if value not in (None, ""):
+                return str(value)
+    except Exception:  # noqa: BLE001 - grouping has a deterministic filename fallback
+        pass
+    return None
+
+
 def normalize_orientation(arr: Any, orientation: int) -> Any:
     """Return pixels in top-left orientation for TIFF/RAW array loaders."""
 

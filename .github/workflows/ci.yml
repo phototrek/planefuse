@@ -24,18 +24,18 @@ jobs:
           enable-cache: true
 
       - name: Sync (CPU torch only — the CUDA wheel must never download here)
-        run: uv sync --frozen --extra cpu
+        run: uv sync --frozen --extra cpu --extra raw
 
       - name: Ruff
-        run: uv run ruff check .
+        run: uv run --frozen --extra cpu --extra raw ruff check .
 
       - name: Mypy
-        run: uv run mypy engine/src server/src
+        run: uv run --frozen --extra cpu --extra raw mypy engine/src server/src
 
       - name: Pytest (CPU device)
         env:
           FOCUSSTACK_DEVICE: cpu
-        run: uv run pytest -q
+        run: uv run --frozen --extra cpu --extra raw pytest -q
 
       - name: Python dependency audit
         run: uvx pip-audit --path .venv/lib/python3.12/site-packages
@@ -62,6 +62,9 @@ jobs:
         working-directory: ui
         run: npm run test:e2e
 
+      - name: Documentation contract
+        run: uv run --frozen --extra cpu --extra raw python scripts/check_docs.py
+
   docker-smoke:
     runs-on: ubuntu-latest
     steps:
@@ -70,9 +73,12 @@ jobs:
       - name: Build CPU image
         run: docker build --target cpu -t focusstack:cpu .
 
+      - name: Validate CUDA Compose security/configuration
+        run: docker compose config --quiet
+
       - name: Run and health-check /api/system
         run: |
-          docker run -d --name fs -p 8425:8425 focusstack:cpu
+          docker run -d --name fs -p 127.0.0.1:8425:8425 focusstack:cpu
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8425/api/system >/dev/null; then
               echo "healthy"; docker rm -f fs; exit 0

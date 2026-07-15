@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from focusstack.io import RAW_EXTENSIONS, validate_stack
+from focusstack.io import RAW_EXTENSIONS, capture_time_from_file, validate_stack
 from focusstack_server.projects import Project, ProjectStore
 
 router = APIRouter(prefix="/api/projects")
@@ -104,10 +105,13 @@ def remove_frames(pid: str, body: PathsBody, request: Request) -> JSONResponse:
 
 
 @router.post("/{pid}/frames/auto-group")
-def auto_group(pid: str, request: Request, max_gap: int = 3) -> JSONResponse:
-    """Group the project's frames into stacks by gaps in their trailing file
-    number (EXIF-time grouping needs pyexiv2 — M6). A gap > max_gap starts a new
-    group. Returns proposed groups for UI confirmation."""
+def auto_group(
+    pid: str,
+    request: Request,
+    max_gap: int = Query(3, ge=0),
+    max_seconds: float = Query(10.0, ge=0),
+) -> JSONResponse:
+    """Propose stacks from capture-time gaps, with filename gaps as fallback."""
     store = _store(request)
     proj = store.get(pid)
     if proj is None:
@@ -117,16 +121,42 @@ def auto_group(pid: str, request: Request, max_gap: int = 3) -> JSONResponse:
         m = re.search(r"(\d+)(?=\.[^.]+$)", Path(p).name)
         return int(m.group(1)) if m else None
 
+    def _time(p: str) -> datetime | None:
+        raw = capture_time_from_file(Path(p))
+        if raw is None:
+            return None
+        value = raw.strip()
+        for fmt in ("%Y:%m:%d %H:%M:%S", "%Y:%m:%d %H:%M:%S.%f"):
+            try:
+                return datetime.strptime(value, fmt)
+            except ValueError:
+                pass
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
     groups: list[list[str]] = []
     cur: list[str] = []
     last: int | None = None
+    last_time: datetime | None = None
     for fp in proj.frames:
         n = _num(fp)
-        if last is not None and n is not None and (n - last) > max_gap and cur:
+        captured = _time(fp)
+        split = False
+        if last_time is not None and captured is not None:
+            try:
+                split = abs((captured - last_time).total_seconds()) > max_seconds
+            except TypeError:  # naive/aware mismatch: use the filename contract
+                split = last is not None and n is not None and (n - last) > max_gap
+        elif last is not None and n is not None:
+            split = (n - last) > max_gap
+        if split and cur:
             groups.append(cur)
             cur = []
         cur.append(fp)
         last = n
+        last_time = captured
     if cur:
         groups.append(cur)
     return JSONResponse(content={"groups": groups})

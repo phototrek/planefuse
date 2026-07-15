@@ -1,74 +1,88 @@
 # FocusStack
 
-Professional GPU-accelerated focus stacking. CUDA (NVIDIA), MPS (Apple silicon), CPU fallback.
-See `docs/SPEC.md` for the full specification.
+FocusStack is a local, professional focus-stacking workspace with CUDA, Apple MPS,
+and CPU execution. It supports developed RGB images and a same-camera, no-bake
+camera-RAW workflow that exports a validated, lossless 16-bit Linear DNG for
+Capture One Pro.
+
+![FocusStack RAW workspace](docs/assets/raw-workspace.png)
+
+## What is implemented
+
+- Streaming PMax, DMap, weighted, and slab stacking with tiled/CPU OOM recovery.
+- Similarity, translation, and perspective alignment with portable Lanczos-3 warping.
+- 8/16-bit TIFF, JPEG, and true 16-bit RGB PNG, including ICC/EXIF/XMP handling.
+- Same-camera RAW decoding through LibRaw with AHD demosaic and no baked white
+  balance, gamma, auto brightness, tone curve, denoise, sharpening, or output-color conversion.
+- Atomic, lossless Linear DNG export with camera calibration, source hashes,
+  transforms, exclusions, parameters, decoder recipe, and reversible float-to-16-bit mapping.
+- Local Svelte workspace with validation, smart-selection review, queue/history,
+  deep zoom, synchronized compare, histogram/clipping, retouching, and pro export controls.
+- CLI, localhost-only server, CPU/CUDA containers, and cross-platform launchers.
 
 ## Quick start
 
-    uv sync --extra cu12x        # NVIDIA (Windows/Linux); --extra cpu without a GPU; plain uv sync on Apple silicon
-    uv run focusstack stack ./my_stack -o result.tif --method pmax
+Requirements: Python 3.12, [uv 0.11.28+](https://docs.astral.sh/uv/), and
+Node.js 22+.
 
-## Status
+```bash
+uv sync --frozen --extra cpu --extra raw
+cd ui && npm ci --no-fund && npm run build && cd ..
+uv run --frozen --extra cpu --extra raw focusstack serve
+```
 
-- [x] M1 — engine core, PMax, CLI
-- [x] M2 — alignment
-- [x] M3 — DMap, weighted, slabbing, smart frame selection
-- [x] M4 — server + web UI (import → stack → view → export)
-- [x] M5 — retouch engine, server, UI, and browser workflow complete
-- [~] M6 — Docker + compose + CI done; UI polish (histogram, compare, export templates, validation UX) pending
+On Apple silicon the macOS Torch wheel uses MPS automatically. NVIDIA users on
+Windows/Linux select `--extra cu12x` instead of `--extra cpu`.
 
-## Web UI
+The launchers perform the same locked setup on first run:
 
-The Svelte UI is a single workspace screen: add inputs (folders or individual
-files) → choose an algorithm → **Run** → results land in the render drawer →
-view with deep-zoom → export. Retouch launches from a finished result.
+```text
+scripts/start-macos.sh
+scripts\start-windows-cpu.bat
+scripts\start-windows-gpu.bat
+```
 
-It lives in `ui/` and builds into the server's static dir, so one process
-serves UI + API.
+## CLI
 
-**Quick start** — run the launcher for your machine (builds the UI on first run,
-then serves and opens your browser):
+Rendered stack:
 
-    scripts\start-windows-gpu.bat    # Windows, NVIDIA GPU
-    scripts\start-windows-cpu.bat    # Windows, CPU only
-    bash scripts/start-macos.sh      # macOS (Apple Silicon uses MPS)
+```bash
+uv run --frozen --extra cpu focusstack stack ./tiffs -o result.tif --method pmax --align
+```
 
-Or do it by hand:
+No-bake RAW stack and maximum-information Capture One output:
 
-    cd ui && npm install && npm run build
-    uv run --extra cu12x focusstack serve   # NVIDIA/CUDA GPU; opens http://127.0.0.1:8425
-    # CPU-only machine: uv run --extra cpu focusstack serve
+```bash
+uv run --frozen --extra cpu --extra raw focusstack stack ./raw-stack \
+  -o result.dng --method pmax --align --float-tiff result-scene-linear-float.tif
+```
 
-The `cpu` and `cu12x` extras are mutually exclusive and have no default — pick
-one explicitly. A plain `uv run …` reverts the env to the CPU torch build, so
-always pass `--extra cu12x` to use the GPU (check it worked: `/api/system`
-reports `"device": "cuda"`).
+RAW frames must come from the same camera and sensor mode. The DNG is a demosaiced
+LinearRaw file, not a re-created sensor mosaic; that is the format that retains the
+stacked scene-linear RGB data without inventing mosaic samples.
 
-For UI development with hot reload, run the server and the Vite dev server side
-by side (Vite proxies `/api` and `/ws` to the server, so open **5173**, not 8425):
+## Documentation
 
-    uv run --extra cu12x focusstack serve   # terminal 1 (GPU)
-    cd ui && npm run dev                     # terminal 2 → http://localhost:5173
+- [Installation](docs/INSTALL.md)
+- [User guide](docs/USER_GUIDE.md)
+- [RAW and Capture One workflow](docs/RAW_DNG_CAPTURE_ONE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [API](docs/API.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Performance](docs/PERFORMANCE.md)
+- [Release checklist](docs/RELEASE_CHECKLIST.md)
+- [Implementation specification](docs/SPEC.md)
 
-## Docker
+## Verification status
 
-Two image targets share one `Dockerfile`:
+As of 2026-07-15: the complete Python suite, static checks, production UI build,
+CPU browser workflows, and a targeted MPS RAW→DNG browser workflow pass. The DNG
+is reopened by tifffile and LibRaw and pixel-checked before atomic publication.
+CUDA hardware and manual import in the current Capture One Pro 16.7.5 remain
+explicit release-machine gates; see the [release checklist](docs/RELEASE_CHECKLIST.md).
 
-    docker compose up --build            # CUDA target, needs nvidia-container-toolkit
-    docker build --target cpu -t focusstack:cpu .   # CPU-only, smaller, no GPU
+## Security boundary
 
-Compose binds the port to `127.0.0.1` only (the server is auth-less and localhost-only
-by design), mounts your photo library read-only at `/photos`, and keeps projects/cache
-in the `fs-data` volume. Set `FOCUSSTACK_PHOTOS=/path/to/photos` to point at your library.
-
-**Apple silicon:** Docker on macOS has no GPU passthrough, so MPS is unreachable from
-containers. Run natively with `uv sync && uv run focusstack serve` for MPS acceleration;
-the `cpu` image works but is the slow path.
-
-## Development
-
-    uv run pytest          # CPU + whatever accelerator this machine has
-    uv run ruff check .
-    uv run mypy engine/src
-    cd ui && npm run check         # svelte-check
-    cd ui && npm run test:e2e      # Playwright smoke
+The app has no authentication because it binds to `127.0.0.1` only. Docker also
+publishes `127.0.0.1:8425:8425`; do not change this to a LAN-wide binding. Source
+photos are used in place and are never deleted by project removal.

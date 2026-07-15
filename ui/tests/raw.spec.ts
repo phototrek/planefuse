@@ -63,6 +63,7 @@ test('RAW mode stacks without baking and exports Capture One Linear DNG', async 
   await page.getByTestId('ws-export').click();
   await page.getByLabel('Export format').selectOption('dng');
   await expect(page.getByTestId('dng-no-bake-summary')).toContainText('Capture One Pro');
+  await expect(page.getByTestId('dng-no-bake-summary')).toBeInViewport({ ratio: 1 });
   await page.getByLabel('Also write an unclamped 32-bit float TIFF companion (not RAW)').check();
   await page.getByTestId('export-dest').fill(output);
   const exportResponse = page.waitForResponse(

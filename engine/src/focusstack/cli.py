@@ -173,7 +173,7 @@ def serve():
     except ImportError:
         typer.echo(
             "error: the web UI is not installed. Install the focusstack-server package "
-            "(coming in milestone M4): uv sync (workspace) or pip install focusstack-server",
+            "with the workspace setup: uv sync --frozen --extra cpu --extra raw",
             err=True,
         )
         raise typer.Exit(1) from None

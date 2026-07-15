@@ -374,7 +374,9 @@
     align-items: center;
     gap: 0;
     height: 100%;
-    overflow: hidden;
+    overflow: visible;
+    position: relative;
+    z-index: 40;
   }
   .section {
     display: flex;

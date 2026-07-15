@@ -1,8 +1,8 @@
 # FocusStack — Professional GPU-Accelerated Focus Stacking Software
 
-**Specification v1.0 — 2026-06-12**
+**Specification v1.1 — 2026-07-15**
 
-This document is a complete, self-contained specification for building FocusStack, a professional focus-stacking application. It is written to be handed to an LLM (or a human team) for implementation. Follow the milestones in order; each has explicit acceptance criteria.
+This is the implemented product contract for FocusStack. The original milestone order is retained as project history; current operational details are linked from the root README and the API, architecture, installation, user, and RAW workflow guides.
 
 ---
 
@@ -15,9 +15,10 @@ FocusStack merges a series of photographs taken at different focus distances ("a
 1. **Quality** — alignment and stacking results competitive with Zerene Stacker, including handling of focus breathing (scale change between frames), halo control, and full interactive retouching.
 2. **Speed** — GPU acceleration for every heavy operation: CUDA on NVIDIA (primary), Metal/MPS on Apple M-series. A 50-frame 24 MP stack aligns and stacks (PMax) in under 60 seconds on an RTX 3080-class GPU.
 3. **Robustness** — never crashes on bad input or GPU memory exhaustion; every failure mode degrades gracefully (tiling → CPU fallback → clear error).
-4. **Professional workflow** — 16-bit pipeline end to end, ICC profile and EXIF preservation, batch processing, presets, CLI for automation, full retouching.
+4. **Professional workflow** — 16-bit pipeline end to end, ICC/EXIF/XMP preservation, batch processing, presets, CLI automation, full retouching, and a same-camera camera-RAW workflow.
+5. **No-bake RAW** — stack scene-linear camera RGB without photographic development and export a lossless, validated 16-bit Linear DNG plus optional float32 TIFF for Capture One Pro.
 
-**Explicit non-goals (do not build):** RAW decoding (input is developed TIFF/JPEG/PNG), exposure/HDR stacking, astro stacking, panorama stitching, tethered capture / camera control, cloud processing, mobile support, user accounts.
+**Explicit non-goals:** mixing cameras/sensor modes in one RAW stack, reconstructing or inventing a Bayer/other mosaic after demosaic and spatial stacking, exposure/HDR stacking, astro stacking, panorama stitching, tethered capture/camera control, cloud processing, mobile support, and user accounts.
 
 ---
 
@@ -26,7 +27,7 @@ FocusStack merges a series of photographs taken at different focus distances ("a
 | Layer | Technology |
 |---|---|
 | Processing engine | Python 3.12+, **PyTorch 2.x as the single tensor/compute layer** — one implementation, three devices: **CUDA** (NVIDIA, primary), **MPS** (Apple M-series), **CPU** (fallback + CI). Optional CUDA-only custom kernels (CuPy `RawKernel`) may accelerate hot paths, but every op must have a portable torch implementation behind the same interface |
-| Image I/O | `tifffile` (TIFF), `Pillow` (JPEG/PNG), `pyexiv2` (EXIF/XMP/ICC metadata) |
+| Image I/O | `tifffile`/`imagecodecs` (TIFF/DNG/PNG), `Pillow` (JPEG/portable metadata), `rawpy`/LibRaw (RAW), ExifRead (portable metadata), optional `pyexiv2` enrichment |
 | Alignment math | `opencv-python-headless` (ECC refinement on downscaled luminance, CPU), `torch.fft` phase correlation (any device), GPU warping via torch grid ops |
 | Tooling | **uv** for everything Python: a uv workspace (root `pyproject.toml` + committed `uv.lock`) containing both packages; `uv sync`, `uv run pytest`, `uv run ruff`, `uv run mypy`. Never pip/poetry. `npm` for the UI |
 | Server | FastAPI + uvicorn, WebSocket progress streaming |
@@ -38,7 +39,8 @@ FocusStack merges a series of photographs taken at different focus distances ("a
 
 - The engine package (`focusstack.engine`) must have **zero imports from server or UI code**. It is importable and fully usable from a plain Python script.
 - Every algorithm runs identically (within float tolerance) on every device (CUDA, MPS, CPU). The device is selected at runtime, never at install time.
-- All image math is float32 in the source gamma space (see §5 — no linearization anywhere). Integer math only at I/O boundaries.
+- Rendered-image math is float32 in source gamma. RAW fusion is float32 scene-linear camera RGB; only normalized neutral proxies may be used for alignment and focus measurements. Integer math exists only at I/O boundaries.
+- Processing domains never mix. RAW stacks require one honest camera/sensor/CFA/calibration contract.
 - No global mutable state in the engine. A stacking job is a pure function of (frames, parameters) → result.
 
 ---
@@ -57,7 +59,7 @@ focus-stacker/
 │       │   ├── ops.py           # all image ops, device-agnostic torch (the one true implementation)
 │       │   ├── cuda_fast.py     # OPTIONAL CuPy RawKernel fast paths, same op interface
 │       │   └── kernels/         # .cu kernel source files (loaded as text)
-│       ├── io/                  # load/save, metadata, color profiles
+│       ├── io/                  # rendered/RAW load, metadata, TIFF/PNG/DNG export
 │       ├── align/               # registration pipeline
 │       ├── select/              # smart frame selection / stack thinning (§7.0)
 │       ├── stack/               # algorithm registry: pmax.py, dmap.py, weighted.py, slab.py
@@ -121,13 +123,15 @@ def free_memory(device) -> int                 # cuda: torch.cuda.mem_get_info; 
 
 ## 5. Image I/O and color
 
-**Input:** 8/16-bit RGB TIFF (incl. compressed), JPEG, PNG. Grayscale input is rejected with a clear validation message (RGB only in v1). A stack's frames must share dimensions and bit depth; violations produce a per-file validation report (§12). **Frame order** within a stack defaults to natural filename sort, with an EXIF capture-time option; the UI allows reversing (DMap depth semantics and slabbing depend on focus order — near-to-far vs far-to-near must be consistent, which is all that matters).
+**Input:** 8/16-bit RGB TIFF (including compressed), JPEG, PNG, and camera-RAW families supported by the installed LibRaw. Grayscale is rejected. Rendered frames must share dimensions and bit depth. RAW frames must additionally share camera identity, active sensor dimensions, orientation, sample precision, CFA layout, black/white levels, color matrices, calibration illuminants, and sensor mode. Mixed rendered/RAW stacks are rejected. Natural filename order is the stack order; batch proposals prefer EXIF capture-time gaps and fall back to filename-number gaps.
 
-**Working space:** images are decoded to float32 in [0, 1], **keeping the source gamma** (no linearization — stacking sharpness metrics behave better in gamma space, and this matches Zerene/Helicon behavior). The ICC profile bytes of the reference frame are carried through untouched and embedded in the output. No color conversion is ever performed.
+**Rendered working space (`rendered_rgb`):** decode to float32 in `[0, 1]`, preserving source gamma and reference ICC. No color conversion is performed; working pixels remain unclamped until export.
 
-**Metadata:** EXIF and XMP are copied from the reference frame to the output via `pyexiv2`. Then the `Software` tag is set to `FocusStack <version>`, and tags that no longer apply to a merged image (focus distance, depth-of-field) are dropped. Add an XMP namespace `focusstack:` recording method, parameter hash, frame count, and app version.
+**RAW working space (`scene_linear_camera_rgb`):** LibRaw performs AHD demosaic using unit white balance, linear gamma, no auto brightness/scale, no denoise or median filtering, highlight clipping instead of reconstruction, and raw camera color output. No look, working color space, tone curve, sharpening, or aesthetic white balance is baked. Full-resolution alignment and fusion use the original scene-linear values; robust neutral normalization is measurement-only.
 
-**Output:** 16-bit TIFF (default, with chosen compression: none/LZW/ZIP), 8-bit JPEG (quality slider), 16-bit PNG. File naming template with tokens: `{stack_name}`, `{method}`, `{frames}`, `{date}`, `{seq}`. DMap mode can additionally export the depth map as 16-bit grayscale TIFF/PNG.
+**Metadata/provenance:** portable metadata is always available; optional pyexiv2 enriches supported formats. Single-exposure focus/DoF fields are removed. Results record ordered source SHA-256 hashes, parameters, transforms and quality, exclusions, decoder recipe, device, and versions.
+
+**Output:** rendered results export TIFF (none/LZW/ZIP), true 8/16-bit RGB PNG, or 8-bit JPEG with quality control. DMap can export a 16-bit grayscale depth map. Any result can include an unclamped float32 TIFF. RAW results additionally export an atomic, lossless JPEG-compressed, 16-bit RGB LinearRaw DNG with camera calibration and reversible negative/headroom mapping. The DNG is reopened with tifffile and LibRaw and checked tag-by-tag and pixel-by-pixel before publication. It is not a reconstructed sensor mosaic.
 
 ---
 
@@ -240,6 +244,10 @@ Single-user local app. `focusstack serve` starts uvicorn on `127.0.0.1:8425` (co
 
 **Batch:** `POST /projects/{id}/frames/auto-group` splits an imported folder into multiple stacks using EXIF timestamp gaps (threshold parameter, default 10 s) and filename patterns; the UI shows proposed groups for confirmation, then "Stack all" enqueues one job per group.
 
+`POST /estimate` provides planning estimates, and `GET /viewer/{image_id}/analysis`
+returns server-side RGB/luminance histograms and clipping counts. The complete,
+OpenAPI-checked route table is [API.md](API.md).
+
 ---
 
 ## 10. GUI
@@ -253,7 +261,7 @@ Dark, dense, professional tool aesthetic (Lightroom/Capture One register: near-b
 3. **Queue / Progress** — job list with per-stage progress bars, live log line, cancel/reorder, history with parameters used (re-run with same/edited params).
 4. **Viewer** — tiled deep-zoom canvas (custom Svelte component consuming `/viewer` tiles; smooth wheel zoom centered on cursor, drag pan, 100% toggle). Compare modes: result ↔ any source frame (synced pan/zoom), result A ↔ result B (two methods side by side), depth-map overlay, alignment difference blink. Histogram + clipping indicators.
 5. **Retouch** — see §11.
-6. **Export** — format, bit depth, compression, quality, naming template with live preview, destination, "also export depth map".
+6. **Export** — format, bit depth, TIFF compression, JPEG quality, naming template with live preview, destination, optional depth/float companions, and Linear DNG for RAW-domain results. The UI shows the exact no-bake recipe and explains that Capture One owns all photographic development.
 
 UI state (current project, selections, viewer position) persists across reloads via the project API, not localStorage.
 
@@ -273,7 +281,7 @@ Server-side compositing; the UI is a thin client sending strokes and re-fetching
 
 ## 12. Error handling and robustness rules
 
-- **Validation report** at import: per file → ok / wrong size / wrong bit depth / unreadable / unsupported format. Stacking refuses to start on mixed dimensions; the message names the offending files.
+- **Validation report** at import: per file → ok / wrong size / wrong bit depth / unreadable / unsupported / RAW decode error / mixed domain / incompatible camera-sensor-calibration contract. Stacking refuses to start until every blocking file is named and resolved.
 - Corrupted-mid-job file: skip the frame, emit a warning event, continue; final result notes excluded frames.
 - GPU OOM: tile → CPU fallback chain (§4); user is informed, never crashed.
 - Cancellation leaves the project consistent (cache writes are atomic: write temp + rename).
@@ -298,6 +306,7 @@ Server-side compositing; the UI is a thin client sending strokes and re-fetching
 - **Golden images:** small real stacks committed to the repo (10 frames, downscaled); results compared by hash-with-tolerance to detect drift.
 - **API tests:** full project lifecycle against a temp dir; job cancellation; retouch undo/redo determinism.
 - **UI:** Playwright smoke — import synthetic stack, run PMax, see viewer tiles, paint one retouch stroke, export, assert output file exists and opens.
+- **RAW/DNG:** generated RAW fixtures pin the no-bake LibRaw parameters, same-camera rejection, scene-linear fusion, source hashes, reversible mapping, required DNG tags, lossless compression, and tifffile/LibRaw decoded-code agreement within one 16-bit code. Browser coverage includes RAW import → validation → stack → DNG export on CPU and targeted MPS.
 
 ---
 
@@ -313,7 +322,9 @@ Server-side compositing; the UI is a thin client sending strokes and re-fetching
 
 **M5 — Retouching.** §11 complete. ✓ when: retouch Playwright + undo/redo determinism tests pass.
 
-**M6 — Polish + distribution.** Keyboard shortcuts complete, histogram, compare modes, export naming templates, validation UX, Docker images + compose + CI workflow (§16), docs (`README` with screenshots, user guide, Docker + Apple-silicon install notes).
+**M6 — Polish + distribution (implemented).** Keyboard shortcuts, histogram, synchronized compare modes, export naming templates, validation UX, Docker/Compose/CI, distribution launchers, screenshots, and operational documentation. CUDA hardware and current Capture One manual acceptance remain explicit release-machine gates rather than CI claims.
+
+**Post-M6 RAW extension (implemented).** Explicit processing domains, same-camera RAW validation, no-aesthetic-development LibRaw decode, domain-aware float caching, no-bake UI, and atomic Linear DNG/float companion export for Capture One Pro.
 
 Every milestone ends with: all tests green, `uv run ruff check` + `uv run mypy` clean, a short demo script/GIF.
 
@@ -335,13 +346,13 @@ Apple silicon (M3 Pro-class, MPS): indicative target within ~3× of the RTX 3080
 
 ## 16. Tooling, Docker, CI
 
-**uv (mandatory for all Python workflows):** the repo root is a uv workspace (`[tool.uv.workspace] members = ["engine", "server"]`) with a single committed `uv.lock`. Setup is `uv sync`; everything runs through `uv run` (`uv run pytest`, `uv run focusstack ...`, `uv run ruff check`, `uv run mypy`). PyTorch wheel selection uses uv's documented PyTorch pattern with **conflicting optional extras** — platform markers alone cannot distinguish a CUDA Linux host from a CPU-only Linux container: `[project.optional-dependencies]` defines `cu12x` and `cpu` extras, declared mutually exclusive via `[tool.uv] conflicts`, each pinned to its torch index through per-extra `[tool.uv.sources]`; macOS arm64 (MPS wheel) is marker-based. Default dev setup on Windows/Linux: `uv sync --extra cu12x`; CPU environments (CI, cpu Docker target): `uv sync --extra cpu`. Document this in the root pyproject — it is the one genuinely platform-sensitive dependency. CuPy is an optional extra (`focusstack[cuda-fast]`), never required. README quick start: `uv sync && uv run focusstack serve`.
+**uv (mandatory for all Python workflows):** the repo root is a uv workspace (`[tool.uv.workspace] members = ["engine", "server"]`) with one committed lock. All setup and execution use `--frozen`. The mutually exclusive `cpu` and `cu12x` extras select the Torch index; `raw` adds rawpy/LibRaw and ExifRead. Native CPU/MPS setup is `uv sync --frozen --extra cpu --extra raw`; CUDA 12.8 setup is `uv sync --frozen --extra cu12x --extra raw`. The optional `metadata` extra adds pyexiv2 but is not required by core RAW or metadata handling.
 
 **Docker:** one multi-stage `Dockerfile` with two final targets:
 
-- `cuda` (default): UI build stage (`node:22-slim`, `npm ci && npm run build`) → runtime on `nvidia/cuda:12.x-runtime-ubuntu24.04` with Python 3.12 + uv (`uv sync --frozen --no-dev --extra cu12x`). Run with `--gpus all` (requires nvidia-container-toolkit).
-- `cpu`: same layout on `python:3.12-slim` with `uv sync --frozen --no-dev --extra cpu` — much smaller, used by CI and non-NVIDIA hosts.
+- `cuda`: pinned Node 22 UI and uv stages → `nvidia/cuda:12.8.1-runtime-ubuntu24.04`, Python 3.12.11, and `uv sync --frozen --no-dev --extra cu12x --extra raw`. Run with NVIDIA container support.
+- `cpu`: pinned Node 22 UI and uv stages → `python:3.12.11-slim-bookworm` with `uv sync --frozen --no-dev --extra cpu --extra raw`, used by CI and non-NVIDIA hosts.
 
 `docker-compose.yml` runs the cuda target with `gpus: all`, publishes the port as literally `127.0.0.1:8425:8425` (the bare `8425:8425` form would bind 0.0.0.0 and expose the auth-less server to the LAN, violating §9's localhost-only model), and mounts two volumes: the user's photo directory (read-only) and a projects/cache directory (read-write); the in-container server binds `0.0.0.0` (reachable only through the localhost-mapped port). Healthcheck: `GET /api/system`. **MPS is not reachable from containers** — Docker on macOS has no GPU passthrough; Apple-silicon users run natively via uv (documented in the README; the cpu image works on macOS but is the slow path).
 
-**CI (GitHub Actions):** on every push — `uv sync --frozen --extra cpu` (the CUDA wheel must never download on runners), ruff, mypy, `uv run pytest` (CPU device), UI `npm ci && npm run build` + typecheck, and a `docker build --target cpu` smoke (build + `/api/system` healthcheck). Accelerator suites (`-m cuda`, `-m mps`) are pre-release manual runs on real hardware, per §13.2.
+**CI (GitHub Actions):** on every push — frozen CPU+RAW sync (the CUDA wheel never downloads), Ruff, mypy, Python tests, UI lock/audit/typecheck/build/Playwright, documentation/API contract, Compose validation, and a CPU Docker build plus `/api/system` healthcheck. MPS and CUDA suites remain real-hardware release gates per §13.2.
