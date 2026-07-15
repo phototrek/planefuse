@@ -108,13 +108,14 @@ def _px_to_norm(m: torch.Tensor, out_h: int, out_w: int, in_h: int, in_w: int) -
     """Convert a pixel-coord output->input matrix to the normalized [-1, 1] grid
     convention torch.affine_grid expects (align_corners=True). Mirrors
     tests/synthetic/generate.py::_apply_affine so estimates compose with ground truth."""
-    dev, dt = m.device, torch.float64
-    m64 = m.to(dtype=dt)
+    dev = m.device
+    dt = m.dtype if m.is_floating_point() else torch.float32
+    work = m.to(dtype=dt)
     s_out = torch.tensor([[2.0 / (out_w - 1), 0, -1], [0, 2.0 / (out_h - 1), -1], [0, 0, 1]],
                          dtype=dt, device=dev)
     s_in = torch.tensor([[2.0 / (in_w - 1), 0, -1], [0, 2.0 / (in_h - 1), -1], [0, 0, 1]],
                         dtype=dt, device=dev)
-    norm = s_in @ m64 @ torch.linalg.inv(s_out)
+    norm = s_in @ work @ torch.linalg.inv(s_out)
     return norm[:2].to(torch.float32)
 
 

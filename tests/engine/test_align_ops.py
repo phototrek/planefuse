@@ -30,6 +30,12 @@ def test_warp_identity_is_noop():
     torch.testing.assert_close(out, img, atol=1e-4, rtol=1e-4)
 
 
+def test_px_to_norm_preserves_float32():
+    matrix = torch.eye(3, dtype=torch.float32)
+    theta = ops._px_to_norm(matrix, 64, 80, 64, 80)
+    assert theta.dtype == torch.float32
+
+
 def test_warp_integer_translation_shifts_pixels():
     img = _rand_img(h=40, w=40, seed=1)
     m = torch.tensor([[1.0, 0.0, 5.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
