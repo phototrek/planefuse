@@ -1,11 +1,61 @@
+import errno
 import json
 import os
+import select
 import subprocess
 import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
+
+
+def _run_in_pty(command):
+    master_fd, slave_fd = os.openpty()
+    process = None
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+        )
+        os.close(slave_fd)
+        slave_fd = -1
+        os.write(master_fd, b"\n")
+
+        output = bytearray()
+        while True:
+            readable, _, _ = select.select([master_fd], [], [], 5)
+            if not readable:
+                raise AssertionError("launcher did not exit within 5 seconds")
+            try:
+                chunk = os.read(master_fd, 4096)
+            except OSError as error:
+                if error.errno != errno.EIO:
+                    raise
+                break
+            if not chunk:
+                break
+            output.extend(chunk)
+
+        return_code = process.wait(timeout=5)
+        return return_code, output.decode(errors="replace")
+    finally:
+        if slave_fd >= 0:
+            os.close(slave_fd)
+        os.close(master_fd)
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+
+
+def test_distribution_files_enforce_platform_line_endings():
+    attributes = (ROOT / ".gitattributes").read_text().splitlines()
+    assert "*.sh text eol=lf" in attributes
+    assert "*.command text eol=lf" in attributes
+    assert "*.bat text eol=crlf" in attributes
+    assert "*.cmd text eol=crlf" in attributes
 
 
 def test_launchers_use_locked_raw_install_and_reproducible_ui_build():
@@ -65,6 +115,30 @@ def test_root_macos_launcher_delegates_and_keeps_failures_visible():
     assert 'exit "$status"' in text
 
 
+def test_root_macos_launcher_pauses_only_on_failure_and_preserves_status(tmp_path):
+    project = tmp_path / "focus-stacker"
+    scripts = project / "scripts"
+    scripts.mkdir(parents=True)
+
+    launcher = project / "Launch FocusStack.command"
+    launcher.write_bytes((ROOT / launcher.name).read_bytes())
+    launcher.chmod(0o755)
+    starter = scripts / "start-macos.sh"
+
+    def run_with_stub(exit_code):
+        starter.write_text(f"#!/usr/bin/env bash\nexit {exit_code}\n")
+        starter.chmod(0o755)
+        return _run_in_pty([str(launcher)])
+
+    success_code, success_output = run_with_stub(0)
+    assert success_code == 0
+    assert "Press Return to close this window" not in success_output
+
+    failure_code, failure_output = run_with_stub(23)
+    assert failure_code == 23
+    assert "Press Return to close this window" in failure_output
+
+
 def test_root_windows_launcher_prefers_gpu_and_falls_back_to_cpu():
     text = (ROOT / "Launch FocusStack.bat").read_text().lower()
     probe = text.index("nvidia-smi")
@@ -72,8 +146,16 @@ def test_root_windows_launcher_prefers_gpu_and_falls_back_to_cpu():
     cpu = text.index("scripts\\start-windows-cpu.bat")
     assert probe < gpu < cpu
     assert "if errorlevel 1 goto cpu" in text
-    assert "pause" in text
     assert "exit /b %focusstack_exit%" in text
+
+    lines = [line.strip() for line in text.splitlines()]
+    status_capture = lines.index('set "focusstack_exit=%errorlevel%"')
+    failure_check = lines.index('if not "%focusstack_exit%"=="0" (')
+    pause_lines = [index for index, line in enumerate(lines) if line == "pause"]
+    failure_close = lines.index(")", failure_check + 1)
+    exit_line = lines.index("exit /b %focusstack_exit%")
+    assert len(pause_lines) == 1
+    assert status_capture < failure_check < pause_lines[0] < failure_close < exit_line
 
 
 def test_docs_advertise_both_root_one_click_launchers():
