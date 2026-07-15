@@ -36,6 +36,7 @@ class AlignReport:
     matrices: list[np.ndarray]
     correlations: dict[int, float]
     flagged: set[int]
+    recovered: set[int]
     dropped: set[int]
     cache: AlignedCache
 
@@ -60,7 +61,7 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
             _tick(idx, f"copy {idx + 1}/{n}")
             frame = source.read(idx)
             cache.write(idx, frame, np.ones(frame.shape[:2], dtype=bool))
-        return AlignReport(ref, [np.eye(3) for _ in range(n)], {}, set(), set(), cache)
+        return AlignReport(ref, [np.eye(3) for _ in range(n)], {}, set(), set(), set(), cache)
 
     # estimate consecutive pairs (i, i+1): transform maps (i+1) -> i
     pair: dict[int, np.ndarray] = {}
@@ -87,10 +88,10 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
     # Dropped frames keep an identity matrix (finite) and get an all-False mask
     # so the stacker ignores them.
     dropped: set[int] = set()
+    culprits: set[int] = set()
     if params.drop_misaligned:
         thr = params.correlation_threshold
         bad_pair = {i for i, c in corr.items() if c < thr}
-        culprits: set[int] = set()
         for k in range(n):
             incoming_bad = (k - 1) in bad_pair  # pair (k-1, k)
             outgoing_bad = k in bad_pair        # pair (k, k+1)
@@ -108,12 +109,46 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
             candidates = [k for k in range(n) if k not in culprits]
             if candidates:
                 ref = min(candidates, key=lambda k: (abs(k - ref), k))
-        dropped = {k for k in culprits if k != ref}
 
     chain = chain_to_reference(n, pair, corr, ref=ref,
                                threshold=params.correlation_threshold,
                                drop=False)
     matrices = chain.matrices
+
+    # A single unreliable consecutive estimate contaminates every chained
+    # transform whose path crosses that link. Re-estimate those frames directly
+    # against the chosen reference and accept only correlations that clear the
+    # same quality threshold. This prevents a bad link from silently poisoning
+    # otherwise alignable frames on the far side of the chain.
+    bad_pair = {i for i, c in corr.items() if c < params.correlation_threshold}
+    affected: set[int] = set()
+    for frame_idx in range(n):
+        if frame_idx < ref:
+            path = range(frame_idx, ref)
+        elif frame_idx > ref:
+            path = range(ref, frame_idx)
+        else:
+            continue
+        if any(link in bad_pair for link in path):
+            affected.add(frame_idx)
+
+    recovered: set[int] = set()
+    for frame_idx in sorted(affected):
+        direct = estimate_pair(
+            source.read(ref),
+            source.read(frame_idx),
+            device,
+            max_long_edge=params.max_long_edge,
+            model=params.model,
+            normalize_brightness=params.normalize_brightness,
+        )
+        if direct.correlation >= params.correlation_threshold:
+            matrices[frame_idx] = direct.matrix
+            recovered.add(frame_idx)
+
+    flagged = affected - recovered
+    if params.drop_misaligned:
+        dropped = {frame_idx for frame_idx in culprits if frame_idx != ref and frame_idx in flagged}
 
     if dropped:
         survivors = [i for i in range(n) if i not in dropped]
@@ -155,4 +190,4 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
 
     if progress is not None:
         progress("done", 1.0)
-    return AlignReport(ref, matrices, corr, chain.flagged, dropped, cache)
+    return AlignReport(ref, matrices, corr, flagged, recovered, dropped, cache)

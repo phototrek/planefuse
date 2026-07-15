@@ -38,6 +38,11 @@ def test_recovered_transforms_match_ground_truth(tmp_path, seed):
     ref = report.reference
     factor = max(stack.frames[0].shape[:2]) / align_res
 
+    if seed == 41:
+        assert {0, 1} <= report.recovered
+        assert 0 not in report.flagged
+        assert 1 not in report.flagged
+
     for k in range(len(stack.frames)):
         gt = invert(stack.transforms[k]) @ stack.transforms[ref]
         est_full = scale_transform_to_resolution(report.matrices[k], factor)

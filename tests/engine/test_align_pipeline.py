@@ -1,5 +1,6 @@
 import numpy as np
 
+from focusstack.align.estimate import PairResult
 from focusstack.backend import get_device
 from focusstack.align import AlignParams, align_stack
 from focusstack.stack.sources import ArrayFrameSource
@@ -48,3 +49,34 @@ def test_align_stack_drop_misaligned_excludes_bad_frame(tmp_path):
     assert not dropped_mask.any()
     for i in range(5):
         assert np.all(np.isfinite(report.matrices[i]))
+
+
+def test_unrecoverable_direct_alignment_stays_flagged_until_drop(tmp_path, monkeypatch):
+    frames = [np.full((24, 24, 3), value, dtype=np.float32) for value in (0.0, 0.5, 1.0)]
+    src = ArrayFrameSource(frames)
+
+    def fake_estimate(frame_a, frame_b, _device, **_kwargs):
+        pair_values = (float(frame_a[0, 0, 0]), float(frame_b[0, 0, 0]))
+        correlation = 0.2 if pair_values in {(0.0, 0.5), (0.5, 0.0)} else 0.99
+        return PairResult(np.eye(3), correlation, 1.0, 1.0)
+
+    monkeypatch.setattr("focusstack.align.pipeline.estimate_pair", fake_estimate)
+
+    kept = align_stack(
+        src,
+        cache_dir=tmp_path / "kept",
+        device=get_device("cpu"),
+        params=AlignParams(reference=1, correlation_threshold=0.9),
+    )
+    assert kept.flagged == {0}
+    assert not kept.dropped
+    assert not kept.recovered
+
+    dropped = align_stack(
+        src,
+        cache_dir=tmp_path / "dropped",
+        device=get_device("cpu"),
+        params=AlignParams(reference=1, correlation_threshold=0.9, drop_misaligned=True),
+    )
+    assert dropped.flagged == {0}
+    assert dropped.dropped == {0}
