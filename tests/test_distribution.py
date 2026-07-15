@@ -74,3 +74,13 @@ def test_root_windows_launcher_prefers_gpu_and_falls_back_to_cpu():
     assert "if errorlevel 1 goto cpu" in text
     assert "pause" in text
     assert "exit /b %focusstack_exit%" in text
+
+
+def test_docs_advertise_both_root_one_click_launchers():
+    for document in (ROOT / "README.md", ROOT / "docs/INSTALL.md"):
+        text = document.read_text()
+        assert "Launch FocusStack.command" in text
+        assert "Launch FocusStack.bat" in text
+    install = (ROOT / "docs/INSTALL.md").read_text()
+    assert "NVIDIA" in install
+    assert "fall" in install.lower() and "CPU" in install

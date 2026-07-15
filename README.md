@@ -25,6 +25,15 @@ Capture One Pro.
 Requirements: Python 3.12, [uv 0.11.28+](https://docs.astral.sh/uv/), and
 Node.js 22+.
 
+### One click
+
+- **macOS:** double-click `Launch FocusStack.command`.
+- **Windows:** double-click `Launch FocusStack.bat`; it prefers NVIDIA GPU and
+  automatically falls back to CPU.
+
+The first launch performs the locked setup and builds the interface. Keep the
+project folder in place; the launchers delegate to the scripts under `scripts/`.
+
 ```bash
 uv sync --frozen --extra cpu --extra raw
 cd ui && npm ci --no-fund && npm run build && cd ..

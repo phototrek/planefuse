@@ -43,11 +43,19 @@ uv run --frozen --extra cu12x --extra raw focusstack serve
 The richer pyexiv2 adapter is an optional `metadata` extra; core metadata and RAW
 workflows do not require Homebrew or a native Exiv2 installation.
 
-## Launchers
+## One-click launchers
 
-The scripts in [scripts](../scripts) check required commands, use `npm ci`, build
-the UI only when absent, and launch from the frozen lockfile. Their process exit
-code is propagated to the terminal.
+- On macOS, double-click `Launch FocusStack.command` in Finder.
+- On Windows, double-click `Launch FocusStack.bat` in Explorer. A working NVIDIA
+  driver selects the GPU launcher by default; otherwise it falls back to CPU.
+
+The root launchers delegate to the scripts in [scripts](../scripts), which check
+required commands, use `npm ci`, build the UI only when absent, and launch from
+the frozen lockfile. Their process exit code is propagated to the terminal.
+
+For explicit device selection or troubleshooting, run
+`scripts/start-windows-gpu.bat`, `scripts/start-windows-cpu.bat`, or
+`scripts/start-macos.sh` directly.
 
 ## Docker
 
