@@ -9,27 +9,37 @@ import typer
 
 from focusstack.align import AlignParams
 from focusstack.errors import FocusStackError
-from focusstack.io import load_image, save_image
+from focusstack.io import (
+    RAW_EXTENSIONS,
+    ProcessingDomain,
+    save_float_tiff,
+    save_image,
+    save_linear_dng,
+)
 from focusstack.pipeline import stack_frames
 from focusstack.stack import REGISTRY
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
-EXTENSIONS = ("*.tif", "*.tiff", "*.jpg", "*.jpeg", "*.png")
+EXTENSIONS = {".tif", ".tiff", ".jpg", ".jpeg", ".png"} | RAW_EXTENSIONS
 
 
 @app.command()
 def stack(
     input_dir: Path = typer.Argument(..., help="Directory of aligned stack frames"),
-    output: Path = typer.Option(..., "-o", "--output", help="Output image (.tif/.jpg/.png)"),
+    output: Path = typer.Option(..., "-o", "--output", help="Output image (.dng/.tif/.jpg/.png)"),
     method: str = typer.Option("pmax", help=f"Stacking method: {sorted(REGISTRY)}"),
     device: str = typer.Option("auto", help="Compute device: auto|cuda|mps|cpu"),
     selection_smoothing: int = typer.Option(1, min=0, max=3, help="PMax halo control (0=off)"),
     align: bool = typer.Option(False, "--align/--pre-aligned",
                                help="Run §6 alignment first (default: frames are pre-aligned)"),
-    align_model: str = typer.Option("similarity", help="Alignment model: translation|similarity"),
+    align_model: str = typer.Option(
+        "similarity", help="Alignment model: translation|similarity|perspective"
+    ),
     align_max_res: int = typer.Option(2048, help="Max long edge for alignment estimation"),
-    align_interp: str = typer.Option("bilinear", help="Warp interpolation: bilinear|bicubic"),
+    align_interp: str = typer.Option(
+        "lanczos3", help="Full-resolution warp: lanczos3|bilinear|bicubic"
+    ),
     no_brightness_norm: bool = typer.Option(False, "--no-brightness-norm",
                                             help="Disable flicker/brightness normalization"),
     correlation_threshold: float = typer.Option(0.90, help="ECC quality-gate threshold"),
@@ -44,12 +54,17 @@ def stack(
     jpeg_quality: int = typer.Option(95, min=1, max=100),
     depth_map: Path = typer.Option(None, "--depth-map",
                                    help="For dmap: also write the depth map (16-bit grayscale TIFF)"),
+    float_tiff: Path = typer.Option(
+        None,
+        "--float-tiff",
+        help="Also preserve unclamped working values in a 32-bit float TIFF",
+    ),
 ):
     """Stack pre-aligned frames into a single all-in-focus image."""
-    paths: list[Path] = []
-    for pattern in EXTENSIONS:
-        paths.extend(input_dir.glob(pattern))
-    paths = sorted(set(paths))
+    paths = sorted(
+        path for path in input_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in EXTENSIONS
+    )
     if not paths:
         typer.echo(f"error: no input images found in {input_dir}", err=True)
         raise typer.Exit(1)
@@ -104,10 +119,46 @@ def stack(
     except FocusStackError as e:
         typer.echo(f"error: {e}", err=True)
         raise typer.Exit(1) from None
-    # ICC from the reference (middle) frame, SPEC §5
-    icc = load_image(paths[len(paths) // 2]).icc
-    depth_out = 16 if output.suffix.lower() in (".tif", ".tiff") else 8
-    save_image(result.image, output, bit_depth=depth_out, icc=icc, jpeg_quality=jpeg_quality)
+    try:
+        if output.suffix.lower() == ".dng":
+            if result.domain is not ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
+                raise FocusStackError(
+                    "Linear DNG output requires processing domain "
+                    f"{ProcessingDomain.SCENE_LINEAR_CAMERA_RGB.value}"
+                )
+            if result.metadata is None:
+                raise FocusStackError("Linear DNG output requires reference camera metadata")
+            validation = save_linear_dng(
+                result.image,
+                output,
+                result.metadata,
+                result.provenance,
+            )
+            typer.echo(
+                "scene-linear no-bake DNG validated with LibRaw "
+                f"(max code error {validation.max_code_error})"
+            )
+        else:
+            depth_out = 16 if output.suffix.lower() in (".tif", ".tiff") else 8
+            save_image(
+                result.image,
+                output,
+                bit_depth=depth_out,
+                metadata=result.metadata,
+                provenance=result.provenance,
+                jpeg_quality=jpeg_quality,
+            )
+        if float_tiff is not None:
+            save_float_tiff(
+                result.image,
+                float_tiff,
+                metadata=result.metadata,
+                provenance=result.provenance,
+            )
+            typer.echo(f"wrote float TIFF companion {float_tiff}")
+    except (FocusStackError, OSError, ValueError) as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1) from None
     typer.echo(f"wrote {output} in {time.perf_counter() - t0:.1f}s")
     if depth_map is not None and "depth" in result.aux:
         save_image(result.aux["depth"], depth_map, bit_depth=16)

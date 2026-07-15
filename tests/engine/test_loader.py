@@ -7,6 +7,8 @@ from PIL import Image
 
 from focusstack.errors import ValidationError
 from focusstack.io.loader import load_image, validate_stack
+from focusstack.io.metadata import ProcessingDomain
+from tests.engine.test_raw_loader import write_test_raw
 
 
 @pytest.fixture
@@ -50,6 +52,32 @@ def test_icc_passthrough(tmp_path):
     assert f.icc == icc
 
 
+def test_rendered_frame_carries_exif_xmp_and_normalizes_orientation(tmp_path):
+    pixels = np.zeros((2, 3, 3), dtype=np.uint8)
+    pixels[0, 0] = (255, 0, 0)
+    exif = Image.Exif()
+    exif[271] = "FocusStack Camera Co"
+    exif[272] = "SameCam Pro"
+    exif[274] = 6
+    xmp = b'<x:xmpmeta xmlns:x="adobe:ns:meta/"><label>source</label></x:xmpmeta>'
+    path = tmp_path / "oriented.jpg"
+    Image.fromarray(pixels).save(path, exif=exif, xmp=xmp, icc_profile=b"test-icc")
+
+    frame = load_image(path)
+
+    assert frame.domain is ProcessingDomain.RENDERED_RGB
+    assert frame.pixels.shape == (3, 2, 3)
+    assert frame.metadata.camera_make == "FocusStack Camera Co"
+    assert frame.metadata.camera_model == "SameCam Pro"
+    assert frame.metadata.source_orientation == 6
+    assert frame.metadata.orientation == 1
+    assert frame.metadata.exif_bytes
+    assert frame.metadata.xmp_bytes == xmp
+    assert frame.metadata.icc == b"test-icc"
+    assert frame.icc == frame.metadata.icc
+    assert frame.path == path
+
+
 def test_validate_stack_ok(tmp_images):
     report = validate_stack(sorted(tmp_images.glob("*8bit*")))
     assert report.ok
@@ -74,3 +102,40 @@ def test_validate_stack_unreadable(tmp_path):
     report = validate_stack([bad])
     assert not report.ok
     assert report.files[0].status == "unreadable"
+
+
+def test_validate_same_camera_raw_stack_reports_domain_and_decoder(tmp_path):
+    paths = [write_test_raw(tmp_path / f"frame-{index}.dng") for index in range(2)]
+    report = validate_stack(paths)
+    assert report.ok
+    assert report.domain == ProcessingDomain.SCENE_LINEAR_CAMERA_RGB.value
+    assert report.camera == "FocusStack Camera Co SameCam Pro"
+    assert report.decoder["demosaic"] == "AHD"
+
+
+@pytest.mark.parametrize(
+    ("second_options", "expected_status"),
+    [
+        ({"model": "Different Camera"}, "incompatible_camera"),
+        ({"width": 42}, "incompatible_sensor_mode"),
+        ({"cfa": (2, 1, 1, 0)}, "incompatible_cfa"),
+    ],
+)
+def test_validate_raw_stack_rejects_incompatible_frames(tmp_path, second_options, expected_status):
+    first = write_test_raw(tmp_path / "first.dng")
+    second = write_test_raw(tmp_path / "second.dng", **second_options)
+    report = validate_stack([first, second])
+    assert not report.ok
+    assert report.files[0].status == "ok"
+    assert report.files[1].status == expected_status
+    assert "expected" in report.files[1].message
+    assert "actual" in report.files[1].message
+
+
+def test_validate_stack_rejects_mixed_rendered_and_raw_domains(tmp_path):
+    raw = write_test_raw(tmp_path / "first.dng")
+    rendered = tmp_path / "second.png"
+    Image.fromarray(np.zeros((32, 40, 3), dtype=np.uint8)).save(rendered)
+    report = validate_stack([raw, rendered])
+    assert not report.ok
+    assert report.files[1].status == "mixed_domain"

@@ -20,7 +20,8 @@ class EnqueueBody(BaseModel):
 def _job_dict(job) -> dict:
     return {"id": job.id, "type": job.type, "status": job.status,
             "percent": job.percent, "message": job.message,
-            "result": job.result, "error": job.error, "params": job.params}
+            "result": job.result, "error": job.error, "error_code": job.error_code,
+            "params": job.params}
 
 
 @router.post("/projects/{pid}/jobs")
@@ -33,7 +34,7 @@ def enqueue(pid: str, body: EnqueueBody, request: Request) -> JSONResponse:
     if body.type == "stack":
         work = make_stack_runner(store, proj, body.params)
     elif body.type == "export":
-        work = make_export_runner(proj, body.params)
+        work = make_export_runner(store, proj, body.params)
     else:
         return JSONResponse(status_code=400,
                             content={"error": "unsupported_job", "detail": body.type})

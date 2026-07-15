@@ -28,10 +28,21 @@ def _to_tensor3(m: np.ndarray, device: Device) -> torch.Tensor:
 
 def estimate_pair(frame_a: np.ndarray, frame_b: np.ndarray, device: Device,
                   max_long_edge: int = 2048, model: str = "similarity",
-                  normalize_brightness: bool = True) -> PairResult:
+                  normalize_brightness: bool = True,
+                  normalize_scene_linear: bool = False) -> PairResult:
     """Estimate the transform warping frame_b onto frame_a (consecutive pair)."""
-    pa, factor = make_proxy(frame_a, device, max_long_edge)
-    pb, _ = make_proxy(frame_b, device, max_long_edge)
+    pa, factor = make_proxy(
+        frame_a,
+        device,
+        max_long_edge,
+        normalize_scene_linear=normalize_scene_linear,
+    )
+    pb, _ = make_proxy(
+        frame_b,
+        device,
+        max_long_edge,
+        normalize_scene_linear=normalize_scene_linear,
+    )
     h, w = pa.shape[-2:]
     cx, cy = (w - 1) / 2.0, (h - 1) / 2.0
 
@@ -47,7 +58,7 @@ def estimate_pair(frame_a: np.ndarray, frame_b: np.ndarray, device: Device,
 
     a_np = pa.squeeze(0).cpu().numpy()
     b_np = pb.squeeze(0).cpu().numpy()
-    m, corr = refine_ecc(a_np, b_np, init=init, cx=cx, cy=cy)
+    m, corr = refine_ecc(a_np, b_np, init=init, cx=cx, cy=cy, model=model)
     if model == "translation":
         m[:2, :2] = np.eye(2)  # enforce translation model
 
@@ -58,7 +69,20 @@ def estimate_pair(frame_a: np.ndarray, frame_b: np.ndarray, device: Device,
     # physically impossible — reject it, fall back to the gentler initial guess,
     # and report zero correlation so the quality gate can flag/drop the pair.
     sc = float(np.sqrt(abs(np.linalg.det(m[:2, :2]))))
-    if not (0.8 < sc < 1.25):
+    corners = np.array([[0, 0, 1], [w - 1, 0, 1], [w - 1, h - 1, 1], [0, h - 1, 1]], dtype=np.float64)
+    mapped = (m @ corners.T).T
+    valid_projective = bool(
+        bool(np.all(np.isfinite(m)))
+        and abs(float(np.linalg.det(m))) > 1e-8
+        and bool(np.all(np.abs(mapped[:, 2]) > 1e-6))
+    )
+    if valid_projective and model == "perspective":
+        mapped_xy = mapped[:, :2] / mapped[:, 2:3]
+        displacement = np.linalg.norm(mapped_xy - corners[:, :2], axis=1)
+        valid_projective = bool(np.max(displacement) < np.hypot(h, w) * 0.5)
+    if (model == "perspective" and not valid_projective) or (
+        model != "perspective" and not (0.8 < sc < 1.25)
+    ):
         m = init.copy()
         if model == "translation":
             m[:2, :2] = np.eye(2)

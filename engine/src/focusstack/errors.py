@@ -15,3 +15,15 @@ class BackendError(FocusStackError):
 
 class AlignmentError(FocusStackError):
     """Alignment failed (M2; defined now so the hierarchy is complete)."""
+
+
+class RawDecodeError(FocusStackError):
+    """A camera RAW file could not be decoded without changing the RAW recipe."""
+
+
+class DngExportError(FocusStackError):
+    """A Linear DNG could not be written or failed post-write conformance checks."""
+
+
+class DiskSpaceError(FocusStackError):
+    """There is not enough free space for an atomic output."""

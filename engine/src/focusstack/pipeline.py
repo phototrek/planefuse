@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 
 from focusstack.align import AlignParams, align_stack
@@ -49,19 +50,23 @@ def stack_frames(
 
     device = get_device(device_pref)
 
+    reference_index = (align.reference if align is not None and align.reference is not None else len(paths) // 2)
+    disk_source = DirFrameSource(list(paths), reference_index=reference_index)
     source: FrameSource
     masks: FrameSource | None = None
+    alignment_report = None
     if align is not None:
         cdir = Path(cache_dir) if cache_dir is not None else Path(tempfile.mkdtemp(prefix="fs-align-"))
-        areport = align_stack(DirFrameSource(list(paths)), cache_dir=cdir, device=device,
-                              params=align, progress=progress, cancel=cancel)
-        source = areport.cache.frame_source()
-        masks = areport.cache.mask_source()
+        alignment_report = align_stack(disk_source, cache_dir=cdir, device=device,
+                                       params=align, progress=progress, cancel=cancel)
+        source = alignment_report.cache.frame_source()
+        masks = alignment_report.cache.mask_source()
         height, width = source.read(0).shape[:2]
     else:
-        source = DirFrameSource(list(paths))
+        source = disk_source
         height, width = report.height, report.width
 
+    selected_indices = list(range(len(paths)))
     if select is not None:
         sel = select_frames(source, device, select, masks=masks, progress=progress)
         if progress is not None:
@@ -71,6 +76,7 @@ def stack_frames(
             progress(msg, 0.0)
         source = _SubsetSource(source, sel.kept)
         masks = _SubsetSource(masks, sel.kept) if masks is not None else None
+        selected_indices = list(sel.kept)
         height, width = source.read(0).shape[:2]
 
     use_tiled = tile_mode == "always"
@@ -85,11 +91,52 @@ def stack_frames(
         if tiled:
             img = stack_tiled(method, source, dev, params, tile=tile,
                               progress=progress, cancel=cancel, masks=masks)
-            return StackResult(image=img)
-        algo = get_algorithm(method)
-        if masks is not None:
-            return algo.run(source, dev, params, progress=progress, cancel=cancel, masks=masks)  # type: ignore[call-arg]
-        return algo.run(source, dev, params, progress=progress, cancel=cancel)
+            result = StackResult(image=img, domain=source.domain, metadata=source.metadata)
+        else:
+            algo = get_algorithm(method)
+            if masks is not None:
+                result = algo.run(source, dev, params, progress=progress, cancel=cancel, masks=masks)  # type: ignore[call-arg]
+            else:
+                result = algo.run(source, dev, params, progress=progress, cancel=cancel)
+            result.domain = source.domain
+            result.metadata = source.metadata
+
+        if alignment_report is None:
+            alignment_payload: dict[str, Any] = {
+                "model": "none",
+                "reference": reference_index,
+                "transforms": [np.eye(3).tolist() for _ in paths],
+                "quality": {},
+                "flagged": [],
+                "recovered": [],
+                "excluded": [],
+            }
+        else:
+            alignment_payload = {
+                "model": align.model if align is not None else "none",
+                "reference": alignment_report.reference,
+                "transforms": [matrix.tolist() for matrix in alignment_report.matrices],
+                "quality": {
+                    str(key): value for key, value in alignment_report.correlations.items()
+                },
+                "flagged": sorted(alignment_report.flagged),
+                "recovered": sorted(alignment_report.recovered),
+                "excluded": sorted(alignment_report.dropped),
+            }
+        result.provenance = {
+            "method": method,
+            "parameters": params,
+            "device": dev.kind,
+            "tiled": tiled,
+            "sources": [
+                {"name": path.name, "sha256": digest}
+                for path, digest in zip(paths, disk_source.source_hashes, strict=True)
+            ],
+            "alignment": alignment_payload,
+            "selected": selected_indices,
+            "excluded": sorted(set(range(len(paths))) - set(selected_indices)),
+        }
+        return result
 
     def _is_oom(e: Exception) -> bool:
         if isinstance(e, torch.cuda.OutOfMemoryError):

@@ -12,6 +12,8 @@ from typing import Callable
 import numpy as np
 
 from focusstack.backend import Device, ops
+from focusstack.align.proxy import scene_linear_proxy_luminance
+from focusstack.io.metadata import ProcessingDomain
 from focusstack.stack.base import FrameSource
 
 _MAX_INVALID_FRACTION = 0.25
@@ -60,7 +62,10 @@ def compute_focus_measures(source: FrameSource, device: Device,
         if progress is not None:
             progress(f"focus measure {p + 1}/{n}", p / n)
         frame = probe if p == 0 else source.read(p)
-        gray = ops.to_numpy(ops.rgb_to_luminance(ops.to_tensor(frame, device)))[..., 0]
+        if source.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
+            gray = scene_linear_proxy_luminance(frame)
+        else:
+            gray = ops.to_numpy(ops.rgb_to_luminance(ops.to_tensor(frame, device)))[..., 0]
         d = _vertical_second_diff(gray).ravel()
         if masks is not None:
             valid = np.ascontiguousarray(masks.read(p)).astype(bool).ravel()

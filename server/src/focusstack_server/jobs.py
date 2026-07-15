@@ -14,6 +14,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from focusstack_server.errors import classify_error
+
 WorkFn = Callable[[Callable[[str, float], None], Callable[[], bool]], Any]
 EventFn = Callable[[dict], None]
 
@@ -28,6 +30,7 @@ class Job:
     message: str = ""
     result: Any = None
     error: str = ""
+    error_code: str = ""
     _work: WorkFn | None = None
     _cancel: threading.Event = field(default_factory=threading.Event)
     _done: threading.Event = field(default_factory=threading.Event)
@@ -119,6 +122,7 @@ class JobQueue:
             except Exception as e:  # noqa: BLE001 - surfaced as structured error
                 job.status = "error"
                 job.error = str(e)
+                job.error_code, _status = classify_error(e)
             finally:
                 self._emit(job)
                 job._done.set()

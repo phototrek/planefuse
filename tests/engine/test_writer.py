@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
+import imagecodecs
 
 from focusstack.io import load_image
-from focusstack.io.writer import save_image
+from focusstack.io.writer import save_float_tiff, save_image
 
 
 @pytest.fixture
@@ -52,11 +53,40 @@ def test_png8(tmp_path, img):
     assert back.bit_depth == 8
 
 
-def test_png16_rejected_until_m6(tmp_path, img):
-    with pytest.raises(ValueError, match="M6"):
-        save_image(img, tmp_path / "p16.png", bit_depth=16)
+def test_png16_rgb_roundtrip_without_8bit_quantization(tmp_path, img):
+    out = tmp_path / "p16.png"
+    save_image(img, out, bit_depth=16)
+    encoded = imagecodecs.png_decode(out.read_bytes())
+    assert encoded.dtype == np.uint16
+    assert encoded.shape == img.shape
+    np.testing.assert_allclose(encoded.astype(np.float32) / 65535.0, img, atol=1.0 / 65535 + 1e-6)
+    back = load_image(out)
+    assert back.bit_depth == 16
+
+
+def test_failed_export_never_publishes_partial_destination(tmp_path, img, monkeypatch):
+    out = tmp_path / "partial.tif"
+
+    def fail_encode(*_args, **_kwargs):
+        raise OSError("simulated encoder failure")
+
+    monkeypatch.setattr("focusstack.io.writer._encode_pixels", fail_encode)
+    with pytest.raises(OSError, match="simulated"):
+        save_image(img, out, bit_depth=16)
+    assert not out.exists()
 
 
 def test_unknown_extension_raises(tmp_path, img):
     with pytest.raises(ValueError):
         save_image(img, tmp_path / "x.webp")
+
+
+def test_float_tiff_companion_preserves_negative_and_highlight_headroom(tmp_path):
+    import tifffile
+
+    arr = np.linspace(-0.25, 1.5, 5 * 7 * 3, dtype=np.float32).reshape(5, 7, 3)
+    destination = tmp_path / "scene-linear-float.tif"
+    save_float_tiff(arr, destination)
+    decoded = tifffile.imread(destination)
+    assert decoded.dtype == np.float32
+    np.testing.assert_array_equal(decoded, arr)

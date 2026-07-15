@@ -14,6 +14,10 @@ dependencies = [
   "psutil>=6.0",
 ]
 
+[project.optional-dependencies]
+raw = ["rawpy>=0.27", "exifread>=3.5.1"]
+metadata = ["pyexiv2>=2.15.5"]
+
 [project.scripts]
 focusstack = "focusstack.cli:app"
 

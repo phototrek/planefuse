@@ -9,11 +9,11 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from focusstack.io import validate_stack
+from focusstack.io import RAW_EXTENSIONS, validate_stack
 from focusstack_server.projects import Project, ProjectStore
 
 router = APIRouter(prefix="/api/projects")
-_IMAGE_EXT = {".tif", ".tiff", ".jpg", ".jpeg", ".png"}
+_IMAGE_EXT = {".tif", ".tiff", ".jpg", ".jpeg", ".png"} | RAW_EXTENSIONS
 
 
 class ScanBody(BaseModel):
@@ -54,6 +54,7 @@ def _report(proj: Project) -> dict:
     return {
         "ok": report.ok,
         "width": report.width, "height": report.height, "bit_depth": report.bit_depth,
+        "domain": report.domain, "camera": report.camera, "decoder": report.decoder,
         "files": [{"name": Path(f.path).name, "path": str(f.path),
                    "status": f.status, "message": f.message} for f in report.files],
     }

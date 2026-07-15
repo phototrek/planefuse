@@ -25,8 +25,11 @@ def warp_full(frame: np.ndarray, matrix_proxy: np.ndarray, device: Device,
     aligned = ops.warp(t, m_t, out_shape=out_shape, interp=interp)
     # validity: warp an all-ones plane with zero padding; ~1 inside, <1 at edges
     ones = torch.ones((1, frame.shape[0], frame.shape[1]), device=device.torch_device)
-    theta = ops._px_to_norm(m_t, out_shape[0], out_shape[1], frame.shape[0], frame.shape[1])  # noqa: SLF001
-    grid = F.affine_grid(theta.unsqueeze(0), [1, 1, *out_shape], align_corners=True)
+    grid = ops._normalized_grid(  # noqa: SLF001
+        m_t,
+        out_shape,
+        (frame.shape[0], frame.shape[1]),
+    )
     sampled = F.grid_sample(ones.unsqueeze(0), grid, mode="bilinear",
                             padding_mode="zeros", align_corners=True)
     mask = (sampled.squeeze(0).squeeze(0) > 0.999).cpu().numpy()

@@ -11,6 +11,8 @@ from typing import Any, Callable, Protocol
 
 import numpy as np
 
+from focusstack.io.metadata import ImageMetadata, ProcessingDomain
+
 ProgressFn = Callable[[str, float], None]  # (message, fraction 0..1)
 CancelFn = Callable[[], bool]
 
@@ -31,9 +33,21 @@ class ParamSpec:
 class StackResult:
     image: np.ndarray  # float32 (H, W, 3), UNclamped (SPEC §7.1)
     aux: dict[str, np.ndarray] = field(default_factory=dict)
+    domain: ProcessingDomain = ProcessingDomain.RENDERED_RGB
+    metadata: ImageMetadata | None = None
+    provenance: dict[str, Any] = field(default_factory=dict)
 
 
 class FrameSource(Protocol):
+    @property
+    def domain(self) -> ProcessingDomain: ...
+
+    @property
+    def metadata(self) -> ImageMetadata | None: ...
+
+    @property
+    def source_hash(self) -> str: ...
+
     def __len__(self) -> int: ...
 
     def read(self, idx: int, region: tuple[int, int, int, int] | None = None) -> np.ndarray:

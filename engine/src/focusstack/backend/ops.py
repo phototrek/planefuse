@@ -119,18 +119,95 @@ def _px_to_norm(m: torch.Tensor, out_h: int, out_w: int, in_h: int, in_w: int) -
     return norm[:2].to(torch.float32)
 
 
+def _pixel_grid(matrix: torch.Tensor, out_shape: tuple[int, int]) -> tuple[torch.Tensor, torch.Tensor]:
+    out_h, out_w = out_shape
+    device = matrix.device
+    work = matrix.to(dtype=torch.float32)
+    rows, cols = torch.meshgrid(
+        torch.arange(out_h, dtype=torch.float32, device=device),
+        torch.arange(out_w, dtype=torch.float32, device=device),
+        indexing="ij",
+    )
+    homogeneous = torch.stack((cols, rows, torch.ones_like(cols)), dim=-1)
+    mapped = homogeneous @ work.T
+    denominator = mapped[..., 2]
+    denominator = torch.where(
+        denominator.abs() < 1e-8,
+        torch.full_like(denominator, 1e-8),
+        denominator,
+    )
+    return mapped[..., 0] / denominator, mapped[..., 1] / denominator
+
+
+def _normalized_grid(
+    matrix: torch.Tensor,
+    out_shape: tuple[int, int],
+    in_shape: tuple[int, int],
+) -> torch.Tensor:
+    source_x, source_y = _pixel_grid(matrix, out_shape)
+    in_h, in_w = in_shape
+    norm_x = source_x * (2.0 / max(in_w - 1, 1)) - 1.0
+    norm_y = source_y * (2.0 / max(in_h - 1, 1)) - 1.0
+    return torch.stack((norm_x, norm_y), dim=-1).unsqueeze(0)
+
+
+def _lanczos3_kernel(distance: torch.Tensor) -> torch.Tensor:
+    return torch.where(
+        distance.abs() < 3.0,
+        torch.sinc(distance) * torch.sinc(distance / 3.0),
+        torch.zeros_like(distance),
+    )
+
+
+def _warp_lanczos3(img: torch.Tensor, matrix: torch.Tensor, out_shape: tuple[int, int]) -> torch.Tensor:
+    channels, in_h, in_w = img.shape
+    out_h, out_w = out_shape
+    source_x, source_y = _pixel_grid(matrix.to(img.device), out_shape)
+    offsets = torch.arange(-2, 4, dtype=torch.float32, device=img.device)
+    flat = img.reshape(channels, -1)
+    output = torch.empty((channels, out_h, out_w), dtype=torch.float32, device=img.device)
+
+    # Keep the temporary 6x6 gather bounded for large full-resolution frames.
+    rows_per_chunk = max(1, 65_536 // max(out_w, 1))
+    for start in range(0, out_h, rows_per_chunk):
+        stop = min(out_h, start + rows_per_chunk)
+        x = source_x[start:stop]
+        y = source_y[start:stop]
+        x_indices = torch.floor(x).unsqueeze(-1) + offsets
+        y_indices = torch.floor(y).unsqueeze(-1) + offsets
+        x_weights = _lanczos3_kernel(x.unsqueeze(-1) - x_indices)
+        y_weights = _lanczos3_kernel(y.unsqueeze(-1) - y_indices)
+        x_weights = x_weights / x_weights.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+        y_weights = y_weights / y_weights.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+        x_indices = x_indices.to(torch.long).clamp_(0, in_w - 1)
+        y_indices = y_indices.to(torch.long).clamp_(0, in_h - 1)
+        indices = y_indices.unsqueeze(-1) * in_w + x_indices.unsqueeze(-2)
+        samples = flat[:, indices.reshape(-1)].reshape(
+            channels, stop - start, out_w, 6, 6
+        )
+        weights = y_weights.unsqueeze(-1) * x_weights.unsqueeze(-2)
+        output[:, start:stop] = (samples * weights.unsqueeze(0)).sum(dim=(-1, -2))
+    return output.to(dtype=img.dtype)
+
+
 def warp(img: torch.Tensor, matrix: torch.Tensor, out_shape: tuple[int, int],
          interp: str = "bilinear") -> torch.Tensor:
     """Warp (C, H, W) by a 3x3 output->input pixel matrix to out_shape (H, W).
 
-    interp: "bilinear" | "bicubic" | "nearest". Lanczos-3 (SPEC default at full
-    res) arrives in a later task; bilinear/bicubic cover estimation and tests.
+    interp: "bilinear" | "bicubic" | "nearest" | "lanczos3".
     Out-of-frame samples use edge clamp (padding_mode="border").
     """
+    if interp == "lanczos3":
+        return _warp_lanczos3(img, matrix, out_shape)
     c, in_h, in_w = img.shape
     out_h, out_w = out_shape
-    theta = _px_to_norm(matrix.to(img.device), out_h, out_w, in_h, in_w).unsqueeze(0)
-    grid = F.affine_grid(theta, [1, c, out_h, out_w], align_corners=True)
+    work = matrix.to(img.device)
+    affine_last_row = torch.tensor([0.0, 0.0, 1.0], dtype=work.dtype, device=work.device)
+    if torch.allclose(work[2], affine_last_row, atol=1e-7, rtol=1e-7):
+        theta = _px_to_norm(work, out_h, out_w, in_h, in_w).unsqueeze(0)
+        grid = F.affine_grid(theta, [1, c, out_h, out_w], align_corners=True)
+    else:
+        grid = _normalized_grid(work, out_shape, (in_h, in_w))
     mode = "bicubic" if interp == "bicubic" else ("nearest" if interp == "nearest" else "bilinear")
     return F.grid_sample(img.unsqueeze(0), grid, mode=mode, padding_mode="border",
                          align_corners=True).squeeze(0)

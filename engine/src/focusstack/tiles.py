@@ -79,6 +79,18 @@ class _RegionSource:
     def __len__(self) -> int:
         return len(self._inner)
 
+    @property
+    def domain(self):
+        return self._inner.domain
+
+    @property
+    def metadata(self):
+        return self._inner.metadata
+
+    @property
+    def source_hash(self) -> str:
+        return self._inner.source_hash
+
     def read(self, idx: int, region=None) -> np.ndarray:
         t = self._t
         if region is None:

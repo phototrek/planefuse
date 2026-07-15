@@ -13,6 +13,7 @@ from focusstack.align.chain import chain_to_reference
 from focusstack.align.estimate import estimate_pair
 from focusstack.align.warp import warp_full
 from focusstack.backend import Device
+from focusstack.io.metadata import ProcessingDomain
 from focusstack.stack.base import FrameSource
 
 ProgressFn = Callable[[str, float], None]
@@ -22,7 +23,7 @@ ProgressFn = Callable[[str, float], None]
 class AlignParams:
     model: str = "similarity"
     max_long_edge: int = 2048
-    interp: str = "bilinear"
+    interp: str = "lanczos3"
     normalize_brightness: bool = True
     correlation_threshold: float = 0.90
     reference: int | None = None
@@ -45,7 +46,12 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
                 params: AlignParams, progress: ProgressFn | None = None,
                 cancel: Callable[[], bool] | None = None) -> AlignReport:
     n = len(source)
-    cache = AlignedCache(cache_dir)
+    cache = AlignedCache(
+        cache_dir,
+        domain=source.domain,
+        metadata=source.metadata,
+        source_hash=source.source_hash,
+    )
     probe = source.read(0)
     out_shape = probe.shape[:2]
     ref = params.reference if params.reference is not None else n // 2
@@ -71,7 +77,10 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
         _tick(i, f"estimate pair {i + 1}/{n - 1}")
         pr = estimate_pair(source.read(i), source.read(i + 1), device,
                            max_long_edge=params.max_long_edge, model=params.model,
-                           normalize_brightness=params.normalize_brightness)
+                           normalize_brightness=params.normalize_brightness,
+                           normalize_scene_linear=(
+                               source.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB
+                           ))
         pair[i] = pr.matrix
         corr[i] = pr.correlation
         factor = pr.proxy_factor
@@ -141,6 +150,9 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
             max_long_edge=params.max_long_edge,
             model=params.model,
             normalize_brightness=params.normalize_brightness,
+            normalize_scene_linear=(
+                source.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB
+            ),
         )
         if direct.correlation >= params.correlation_threshold:
             matrices[frame_idx] = direct.matrix
@@ -167,7 +179,11 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
                 pr = estimate_pair(source.read(s_prev), source.read(s_next), device,
                                    max_long_edge=params.max_long_edge,
                                    model=params.model,
-                                   normalize_brightness=params.normalize_brightness)
+                                   normalize_brightness=params.normalize_brightness,
+                                   normalize_scene_linear=(
+                                       source.domain
+                                       is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB
+                                   ))
                 eff_pair[j] = pr.matrix
 
         sub = chain_to_reference(len(survivors), eff_pair,

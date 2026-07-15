@@ -29,6 +29,12 @@ def test_refine_ecc_returns_similarity():
     np.testing.assert_allclose(block[:, 0] @ block[:, 1], 0.0, atol=1e-4)  # orthogonal cols
 
 
+def test_refine_ecc_rejects_unknown_model():
+    a = np.zeros((32, 32), dtype=np.float32)
+    with np.testing.assert_raises_regex(ValueError, "model"):
+        refine_ecc(a, a, init=np.eye(3), cx=16, cy=16, model="elastic")
+
+
 def test_brightness_gain_matches_mean():
     a = np.full((50, 50), 0.4, dtype=np.float32)
     b = np.full((50, 50), 0.2, dtype=np.float32)

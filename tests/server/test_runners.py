@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from focusstack.io import save_image
 from focusstack_server.main import create_app
+from tests.engine.test_raw_loader import write_test_raw
 
 
 def _proj_with_frames(tmp_path, n=3):
@@ -57,3 +58,27 @@ def test_multiple_stack_jobs_each_persist_a_result(tmp_path):
     proj = c.get(f"/api/projects/{pid}").json()
     methods = sorted(img["method"] for img in proj["images"].values() if img.get("kind") == "result")
     assert methods == ["pmax", "weighted"], proj["images"]
+
+
+def test_raw_stack_persists_domain_metadata_decoder_and_provenance(tmp_path):
+    c = TestClient(create_app(data_dir=tmp_path / "data"))
+    pid = c.post("/api/projects", json={"path": str(tmp_path / "proj"), "name": "RAW"}).json()["id"]
+    src = tmp_path / "raw-frames"
+    src.mkdir()
+    for index in range(2):
+        write_test_raw(src / f"frame-{index}.dng")
+    scan = c.post(f"/api/projects/{pid}/frames/scan", json={"path": str(src)})
+    assert scan.status_code == 200, scan.text
+    jid = c.post(
+        f"/api/projects/{pid}/jobs",
+        json={"type": "stack", "params": {"method": "weighted", "device": "cpu"}},
+    ).json()["id"]
+    job = _wait_job(c, jid)
+    assert job["status"] == "done", job
+    proj = c.get(f"/api/projects/{pid}").json()
+    result = next(img for img in proj["images"].values() if img.get("kind") == "result")
+    assert result["domain"] == "scene_linear_camera_rgb"
+    assert result["metadata"]["unique_camera_model"] == "FocusStack Camera Co SameCam Pro"
+    assert result["decoder"]["auto_brightness"] is False
+    assert len(result["provenance"]["sources"]) == 2
+    assert all("sha256" in source for source in result["provenance"]["sources"])

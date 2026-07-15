@@ -10,10 +10,12 @@ import time
 import webbrowser
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 
+from focusstack.errors import FocusStackError
 from focusstack_server.api import frames, fs, jobs, presets, projects, retouch, system, viewer
+from focusstack_server.errors import classify_error
 from focusstack_server.jobs import JobQueue
 from focusstack_server.retouch import RetouchManager
 from focusstack_server.ws import WsHub
@@ -36,6 +38,12 @@ def create_app(data_dir: Path) -> FastAPI:
     # App-scoped job queue; progress events fan out over the WebSocket hub.
     app.state.jobs = JobQueue(on_event=hub.publish)
     app.state.retouch = RetouchManager(data_dir)
+
+    @app.exception_handler(FocusStackError)
+    async def engine_error(_request: Request, error: FocusStackError) -> JSONResponse:
+        code, status = classify_error(error)
+        return JSONResponse(status_code=status, content={"error": code, "detail": str(error)})
+
     app.include_router(system.router)
     app.include_router(fs.router)
     app.include_router(projects.router)
