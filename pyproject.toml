@@ -5,8 +5,10 @@ requires-python = ">=3.12"
 dependencies = ["focusstack", "focusstack-server"]
 
 [project.optional-dependencies]
-cpu = ["torch>=2.4"]
-cu12x = ["torch>=2.4"]
+cpu = ["torch>=2.13"]
+# torch 2.11.0+cu128 requires setuptools<82, which is affected by PYSEC-2026-3447.
+# Keep the CUDA extra on the newest wheel compatible with setuptools>=83.
+cu12x = ["torch>=2.10,<2.11"]
 
 [tool.uv]
 conflicts = [[{ extra = "cpu" }, { extra = "cu12x" }]]
@@ -38,7 +40,8 @@ dev = [
   "scikit-image>=0.24",
   "ruff>=0.8",
   "mypy>=1.13",
-  "httpx>=0.27",
+  "httpx2>=0.1",
+  "setuptools>=83",
 ]
 
 [tool.pytest.ini_options]

@@ -8,8 +8,8 @@ dependencies = [
   "numpy>=1.26",
   "tifffile>=2024.8.30",
   "imagecodecs>=2024.6.1",
-  "pillow>=10.4",
-  "opencv-python-headless>=4.10",
+  "pillow>=12.3",
+  "opencv-python-headless>=4.10,<5",
   "typer>=0.12",
   "psutil>=6.0",
 ]

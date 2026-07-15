@@ -3,24 +3,31 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": "^22.12 || >=24"
+  },
+  "overrides": {
+    "cookie": "0.7.2"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:mps": "FOCUSSTACK_E2E_DEVICE=mps playwright test"
   },
   "devDependencies": {
     "@fontsource/archivo": "^5.0.0",
     "@fontsource/ibm-plex-mono": "^5.0.0",
-    "@playwright/test": "^1.45.0",
-    "@sveltejs/adapter-static": "^3.0.0",
-    "@sveltejs/kit": "^2.5.0",
-    "@sveltejs/vite-plugin-svelte": "^4.0.0",
-    "@types/node": "^20.19.43",
-    "svelte": "^5.0.0",
-    "svelte-check": "^4.0.0",
-    "typescript": "^5.5.0",
-    "vite": "^5.4.0"
+    "@playwright/test": "^1.61.1",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.69.3",
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@types/node": "^26.1.1",
+    "svelte": "^5.56.5",
+    "svelte-check": "^4.7.2",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.4"
   }
 }
