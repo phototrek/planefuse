@@ -73,10 +73,12 @@ def _color_matrix(raw: Any, tags: dict[int, Any]) -> tuple[float, ...] | None:
     source = _rational_values(tags.get(50721), 9)
     if source is not None:
         return source
-    camera_to_xyz = np.asarray(raw.rgb_xyz_matrix, dtype=np.float64)[:3, :3]
-    if camera_to_xyz.shape != (3, 3) or abs(float(np.linalg.det(camera_to_xyz))) < 1e-10:
+    # LibRaw's cam_xyz (rawpy.rgb_xyz_matrix) is already the DNG ColorMatrix1
+    # convention (XYZ -> cameraRGB); an all-zeros matrix means unknown camera.
+    xyz_to_camera = np.asarray(raw.rgb_xyz_matrix, dtype=np.float64)[:3, :3]
+    if xyz_to_camera.shape != (3, 3) or abs(float(np.linalg.det(xyz_to_camera))) < 1e-10:
         return None
-    return tuple(float(value) for value in np.linalg.inv(camera_to_xyz).reshape(-1))
+    return tuple(float(value) for value in xyz_to_camera.reshape(-1))
 
 
 def _neutral(raw: Any, tags: dict[int, Any]) -> tuple[float, ...] | None:

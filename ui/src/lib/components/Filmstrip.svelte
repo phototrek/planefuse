@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, type FileStatus } from '$lib/api';
+  import { appState } from '$lib/stores.svelte';
 
   let {
     projectId,
@@ -20,7 +21,7 @@
 <div class="strip" data-testid="filmstrip">
   {#each files as f (f.path)}
     <figure class="frame" class:bad={f.status !== 'ok'} class:dim={dropped.has(f.path)} title={f.message || f.name}>
-      <img src={api.thumbUrl(projectId, f.path)} alt={f.name} loading="lazy" />
+      <img src={api.thumbUrl(projectId, f.path, appState.displayTonemap)} alt={f.name} loading="lazy" />
       <figcaption>
         <span class="nm mono">{f.name}</span>
         <span class="badge" class:ok={f.status === 'ok'}>{BADGE[f.status] ?? f.status}</span>

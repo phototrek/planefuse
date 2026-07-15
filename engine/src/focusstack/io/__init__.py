@@ -1,3 +1,4 @@
+from focusstack.io.display import srgb_encode, tonemap_preview
 from focusstack.io.dng import DngValidationReport, save_linear_dng, validate_linear_dng
 from focusstack.io.loader import Frame, ValidationReport, load_image, validate_stack
 from focusstack.io.metadata import (
@@ -25,6 +26,8 @@ __all__ = [
     "save_float_tiff",
     "save_image",
     "save_linear_dng",
+    "srgb_encode",
+    "tonemap_preview",
     "validate_linear_dng",
     "validate_stack",
 ]

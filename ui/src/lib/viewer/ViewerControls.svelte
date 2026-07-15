@@ -1,5 +1,13 @@
 <script lang="ts">
+  import { api } from '$lib/api';
   import { appState, type CompareMode } from '$lib/stores.svelte';
+
+  function toggleTonemap() {
+    appState.displayTonemap = !appState.displayTonemap;
+    if (appState.project) {
+      api.patchUiState(appState.project.id, { displayTonemap: appState.displayTonemap }).catch(() => {});
+    }
+  }
 
   const modes: { id: CompareMode; label: string }[] = [
     { id: 'single', label: 'Single' },
@@ -32,6 +40,13 @@
     aria-pressed={appState.showHistogram}
     onclick={() => (appState.showHistogram = !appState.showHistogram)}
   >Histogram</button>
+  <button
+    class:active={appState.displayTonemap}
+    aria-pressed={appState.displayTonemap}
+    data-testid="tonemap-toggle"
+    title="Preview-only white balance, exposure and gamma for RAW images"
+    onclick={toggleTonemap}
+  >Tonemap</button>
 </div>
 
 <style>

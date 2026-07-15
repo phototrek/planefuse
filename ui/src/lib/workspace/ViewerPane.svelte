@@ -180,14 +180,17 @@
   let lastAnalysisId = '';
   $effect(() => {
     const imageId = loadedView?.imageId ?? '';
-    if (!imageId || imageId === lastAnalysisId) return;
-    lastAnalysisId = imageId;
+    const display = appState.displayTonemap;
+    const key = imageId ? `${imageId}:${display}` : '';
+    if (!key || key === lastAnalysisId) return;
+    lastAnalysisId = key;
     analysis = null;
     analysisError = '';
-    void api.imageAnalysis(imageId).then((value) => {
-      if (loadedView?.imageId === imageId) analysis = value;
+    const current = () => loadedView?.imageId === imageId && appState.displayTonemap === display;
+    void api.imageAnalysis(imageId, 0, display).then((value) => {
+      if (current()) analysis = value;
     }).catch((error) => {
-      if (loadedView?.imageId === imageId) {
+      if (current()) {
         analysis = null;
         analysisError = (error as Error).message;
       }

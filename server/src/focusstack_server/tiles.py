@@ -79,5 +79,12 @@ def rebuild_region(
     return dirty
 
 
-def tile_path(tiles_root: Path, image_id: str, z: int, x: int, y: int) -> Path:
-    return tiles_root / image_id / str(z) / f"{x}_{y}.jpg"
+def tile_path(
+    tiles_root: Path, image_id: str, z: int, x: int, y: int, display: bool = False
+) -> Path:
+    # The display-tonemapped variant lives in a "display/" subtree; it cannot
+    # collide with base tiles because zoom directories are numeric.
+    base = tiles_root / image_id
+    if display:
+        base = base / "display"
+    return base / str(z) / f"{x}_{y}.jpg"

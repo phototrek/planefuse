@@ -131,9 +131,18 @@ export const api = {
     req<RetouchMutation>('POST', `/api/retouch/${id}/redo`),
   flattenRetouch: (id: string, name: string) =>
     req<{ image_id: string }>('POST', `/api/retouch/${id}/flatten`, { name }),
-  thumbUrl: (id: string, path: string) => `/api/projects/${id}/frame-thumb?path=${encodeURIComponent(path)}`,
-  tileUrl: (imageId: string, z: number, x: number, y: number, rev?: number) =>
-    `/api/viewer/${imageId}/tile/${z}/${x}/${y}${rev === undefined ? '' : `?rev=${rev}`}`,
-  imageAnalysis: (imageId: string, revision = 0) =>
-    req<ImageAnalysis>('GET', `/api/viewer/${imageId}/analysis?revision=${revision}`)
+  thumbUrl: (id: string, path: string, display = false) =>
+    `/api/projects/${id}/frame-thumb?path=${encodeURIComponent(path)}${display ? '&display=1' : ''}`,
+  tileUrl: (imageId: string, z: number, x: number, y: number, rev?: number, display = false) => {
+    const query = [
+      ...(rev === undefined ? [] : [`rev=${rev}`]),
+      ...(display ? ['display=1'] : [])
+    ].join('&');
+    return `/api/viewer/${imageId}/tile/${z}/${x}/${y}${query ? `?${query}` : ''}`;
+  },
+  imageAnalysis: (imageId: string, revision = 0, display = false) =>
+    req<ImageAnalysis>(
+      'GET',
+      `/api/viewer/${imageId}/analysis?revision=${revision}${display ? '&display=1' : ''}`
+    )
 };

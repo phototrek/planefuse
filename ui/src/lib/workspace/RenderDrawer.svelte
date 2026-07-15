@@ -119,7 +119,13 @@
           onkeydown={(e) => e.key === 'Enter' && (appState.viewer = { kind: 'result', id: result.id })}
         >
           {#if result.thumb}
-            <img class="thumb" src={result.thumb} alt={result.label} />
+            <img
+              class="thumb"
+              src={result.imageId
+                ? api.tileUrl(result.imageId, 0, 0, 0, undefined, appState.displayTonemap)
+                : result.thumb}
+              alt={result.label}
+            />
           {:else}
             <div class="thumb thumb-placeholder">
               <span class="faint mono">…</span>

@@ -83,6 +83,27 @@ def test_load_raw_is_scene_linear_no_bake(tmp_path: Path):
     assert frame.metadata.decoder["output_color"] == "raw"
 
 
+def test_color_matrix_fallback_keeps_dng_xyz_to_camera_convention(tmp_path: Path):
+    # Without an embedded ColorMatrix1 tag, LibRaw fills cam_xyz from its
+    # Adobe table for known cameras. That matrix is already XYZ -> cameraRGB
+    # (DNG ColorMatrix1 convention) and must be stored verbatim, not inverted:
+    # an inverted matrix renders previews (and exported DNGs) with wildly
+    # rotated hues.
+    path = write_test_raw(
+        tmp_path / "frame.dng",
+        make="Canon",
+        model="EOS 5D Mark III",
+        include_calibration=False,
+    )
+    frame = load_raw(path)
+    matrix = frame.metadata.color_matrix1
+    assert matrix is not None
+    expected = np.array(
+        [6722, -635, -963, -4287, 12460, 2028, -908, 2162, 5668], dtype=np.float64
+    ) / 10000.0
+    np.testing.assert_allclose(np.asarray(matrix), expected, atol=1e-4)
+
+
 def test_generic_loader_dispatches_dng_to_raw_mode(tmp_path: Path):
     path = write_test_raw(tmp_path / "frame.dng")
     assert load_image(path).domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB

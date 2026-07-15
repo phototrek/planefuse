@@ -8,7 +8,8 @@ import numpy as np
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from focusstack_server.image_data import load_project_pixels
+from focusstack.io import ProcessingDomain, tonemap_preview
+from focusstack_server.image_data import load_project_frame
 from focusstack_server.projects import ProjectStore
 
 router = APIRouter(prefix="/api")
@@ -20,7 +21,8 @@ def _histogram(values: np.ndarray) -> list[int]:
 
 
 @router.get("/viewer/{image_id}/analysis")
-def image_analysis(image_id: str, request: Request, revision: int = 0) -> JSONResponse:
+def image_analysis(image_id: str, request: Request, revision: int = 0,
+                   display: int = 0) -> JSONResponse:
     store = ProjectStore(request.app.state.data_dir)
     for project in store.list():
         info = project.images.get(image_id)
@@ -34,11 +36,13 @@ def image_analysis(image_id: str, request: Request, revision: int = 0) -> JSONRe
                 status_code=404,
                 content={"error": "image_not_found", "detail": str(error)},
             )
-        key = (image_id, revision, stat.st_mtime_ns, stat.st_size)
+        key = (image_id, revision, stat.st_mtime_ns, stat.st_size, bool(display))
         cached = request.app.state.analysis_cache.get(key)
         if cached is not None:
             return JSONResponse(content=cached)
-        pixels = load_project_pixels(project, path)
+        pixels, domain, metadata = load_project_frame(project, path)
+        if display and domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
+            pixels = tonemap_preview(pixels, metadata)
         channels = {
             "red": pixels[..., 0],
             "green": pixels[..., 1],

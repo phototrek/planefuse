@@ -65,6 +65,8 @@
       if (!appState.project) {
         appState.project = await api.createScratchProject();
       }
+      appState.displayTonemap =
+        (appState.project.ui_state?.displayTonemap as boolean | undefined) ?? true;
       if (appState.project.frames.length > 0 && appState.inputs.length === 0) {
         const report = await api.addFrames(appState.project.id, []);
         appState.inputs = report.files;

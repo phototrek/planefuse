@@ -57,6 +57,16 @@ test('RAW mode stacks without baking and exports Capture One Linear DNG', async 
   await expect(page.getByTestId('viewer-tile').first()).toBeVisible();
   await expect(page.getByTestId('histogram')).toBeVisible();
 
+  // Preview tonemapping is on by default and only affects tile URLs, not data.
+  const tonemap = page.getByTestId('tonemap-toggle');
+  await expect(tonemap).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('viewer-tile').first()).toHaveAttribute('src', /display=1/);
+  await tonemap.click();
+  await expect(tonemap).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('viewer-tile').first()).not.toHaveAttribute('src', /display=1/);
+  await tonemap.click();
+  await expect(page.getByTestId('viewer-tile').first()).toHaveAttribute('src', /display=1/);
+
   await page.getByRole('button', { name: 'Result / source' }).click();
   await expect(page.getByTestId('compare-viewer')).toBeVisible();
 

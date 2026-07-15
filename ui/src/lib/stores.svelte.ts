@@ -42,6 +42,7 @@ export const appState = $state<{
   compareResultId: string | null;
   viewerTransform: ViewerTransform | null;
   showHistogram: boolean;
+  displayTonemap: boolean;
 }>({
   system: null,
   project: null,
@@ -56,5 +57,6 @@ export const appState = $state<{
   compareMode: 'single',
   compareResultId: null,
   viewerTransform: null,
-  showHistogram: true
+  showHistogram: true,
+  displayTonemap: true
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
+  import { appState } from '$lib/stores.svelte';
   import { isEditableTarget } from '$lib/shortcuts';
 
   let {
@@ -222,7 +223,7 @@
     <img
       class="tile"
       data-testid="viewer-tile"
-      src={api.tileUrl(imageId, z, t.i, t.j, tileVersion?.(z, t.i, t.j))}
+      src={api.tileUrl(imageId, z, t.i, t.j, tileVersion?.(z, t.i, t.j), appState.displayTonemap)}
       alt=""
       draggable="false"
       style:left="{t.left}px"

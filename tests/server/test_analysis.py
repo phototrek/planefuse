@@ -61,3 +61,41 @@ def test_analysis_and_viewer_accept_unclamped_float_working_result(tmp_path):
     assert analysis["clipping"]["highlights"]["blue"] > 0
     tile = client.get(f"/api/viewer/{image_id}/tile/0/0/0")
     assert tile.status_code == 200
+
+
+def test_display_analysis_tonemaps_scene_linear_results(tmp_path):
+    client = TestClient(create_app(data_dir=tmp_path / "data"))
+    pid = client.post(
+        "/api/projects", json={"path": str(tmp_path / "project"), "name": "RAW"}
+    ).json()["id"]
+    pixels = np.full((6, 7, 3), 0.02, dtype=np.float32)
+    path = tmp_path / "project" / "cache" / "dark-result.tif"
+    save_float_tiff(pixels, path)
+    project = client.get(f"/api/projects/{pid}").json()
+    project["images"]["rawresult"] = {
+        "kind": "result",
+        "path": str(path),
+        "storage": "float32_tiff",
+        "domain": "scene_linear_camera_rgb",
+        "metadata": {
+            "source_path": str(path),
+            "as_shot_neutral": [1.0, 1.0, 1.0],
+            "color_matrix1": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        },
+    }
+    import json
+
+    (tmp_path / "project" / "project.json").write_text(json.dumps(project))
+    image_id = _register(client, pid, path)
+
+    def luminance_center(data: dict) -> int:
+        bins = data["histograms"]["luminance"]
+        return max(range(256), key=lambda index: bins[index])
+
+    linear = client.get(f"/api/viewer/{image_id}/analysis").json()
+    display = client.get(f"/api/viewer/{image_id}/analysis?display=1").json()
+    assert luminance_center(linear) < 16
+    assert luminance_center(display) > 128
+    # The two variants are cached under distinct keys and keep coexisting.
+    assert client.get(f"/api/viewer/{image_id}/analysis").json() == linear
+    assert client.get(f"/api/viewer/{image_id}/analysis?display=1").json() == display
