@@ -6,8 +6,31 @@
   import InputList from '$lib/workspace/InputList.svelte';
   import ViewerPane from '$lib/workspace/ViewerPane.svelte';
   import RenderDrawer from '$lib/workspace/RenderDrawer.svelte';
+  import { isEditableTarget, plainShortcut } from '$lib/shortcuts';
 
   let initError = $state('');
+  let shortcutHelp = $state(false);
+
+  function stepFrame(direction: -1 | 1) {
+    if (appState.inputs.length === 0) return;
+    const activePath = appState.viewer?.kind === 'input' ? appState.viewer.path : '';
+    const current = Math.max(0, appState.inputs.findIndex((frame) => frame.path === activePath));
+    const next = (current + direction + appState.inputs.length) % appState.inputs.length;
+    appState.viewer = { kind: 'input', path: appState.inputs[next].path };
+  }
+
+  function shortcuts(event: KeyboardEvent) {
+    if (isEditableTarget(event.target)) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      stepFrame(event.key === 'ArrowLeft' ? -1 : 1);
+    } else if (event.key === 'Escape') {
+      appState.compareMode = 'single';
+      shortcutHelp = false;
+    } else if (plainShortcut(event, '?')) {
+      shortcutHelp = !shortcutHelp;
+    }
+  }
 
   function buildResults(images: Record<string, Record<string, unknown>>): WorkspaceResult[] {
     return Object.entries(images)
@@ -22,7 +45,18 @@
         thumb: undefined,
         levels: undefined,
         width: undefined,
-        height: undefined
+        height: undefined,
+        domain: String(img.domain ?? 'rendered_rgb'),
+        storage: String(img.storage ?? 'rendered_16bit'),
+        metadata: typeof img.metadata === 'object' && img.metadata
+          ? img.metadata as Record<string, unknown>
+          : undefined,
+        decoder: typeof img.decoder === 'object' && img.decoder
+          ? img.decoder as Record<string, unknown>
+          : {},
+        provenance: typeof img.provenance === 'object' && img.provenance
+          ? img.provenance as Record<string, unknown>
+          : {}
       }));
   }
 
@@ -34,6 +68,7 @@
       if (appState.project.frames.length > 0 && appState.inputs.length === 0) {
         const report = await api.addFrames(appState.project.id, []);
         appState.inputs = report.files;
+        appState.scanReport = report;
       }
       if (appState.results.length === 0) {
         appState.results = buildResults(appState.project.images);
@@ -69,6 +104,8 @@
   });
 </script>
 
+<svelte:window onkeydown={shortcuts} />
+
 <div class="workspace">
   <div class="ws-toolbar">
     <Toolbar />
@@ -86,6 +123,15 @@
 
 {#if initError}
   <div class="init-error mono">Init error: {initError}</div>
+{/if}
+
+{#if shortcutHelp}
+  <aside class="shortcut-help panel" aria-label="Keyboard shortcuts">
+    <strong>Keyboard</strong>
+    <span><kbd>F</kbd> Fit</span><span><kbd>Z</kbd> 100%</span>
+    <span><kbd>←</kbd><kbd>→</kbd> Step frames</span><span><kbd>\</kbd> Before / after</span>
+    <span><kbd>Esc</kbd> Exit compare</span><span><kbd>?</kbd> Close help</span>
+  </aside>
 {/if}
 
 <style>
@@ -131,4 +177,6 @@
     font-size: 12px;
     z-index: 9999;
   }
+  .shortcut-help { position: fixed; right: 16px; top: 70px; z-index: 100; display: grid; grid-template-columns: auto auto; gap: 8px 14px; padding: 12px; font-size: 11px; box-shadow: var(--shadow); }
+  .shortcut-help strong { grid-column: 1 / -1; }
 </style>

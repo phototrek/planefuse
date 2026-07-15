@@ -11,13 +11,24 @@
     appState.system ? (appState.system.free_memory / 1024 ** 3).toFixed(1) : '—'
   );
 
-  onMount(async () => {
-    try {
-      appState.system = await api.system();
-    } catch {
+  onMount(() => {
+    void api.system().then((system) => {
+      appState.system = system;
+    }).catch(() => {
       /* banner shows offline */
-    }
+    });
+    const refreshJobs = async () => {
+      try {
+        const jobs = await api.listJobs();
+        for (const job of jobs) appState.jobs[job.id] = job;
+      } catch {
+        /* WebSocket reconnect and next poll will recover. */
+      }
+    };
+    void refreshJobs();
+    const poll = setInterval(refreshJobs, 750);
     connectJobs();
+    return () => clearInterval(poll);
   });
 </script>
 

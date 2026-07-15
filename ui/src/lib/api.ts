@@ -3,9 +3,18 @@ export interface SystemInfo { device: string; device_name: string; free_memory: 
 export interface ParamSpec { name: string; label: string; type: string; default: unknown; min: number | null; max: number | null; choices: string[] | null; tooltip: string | null; }
 export interface Algorithm { name: string; params: ParamSpec[]; }
 export interface FileStatus { name: string; path: string; status: string; message: string; }
-export interface ScanReport { ok: boolean; width: number | null; height: number | null; bit_depth: number | null; files: FileStatus[]; }
+export interface ScanReport {
+  ok: boolean;
+  width: number | null;
+  height: number | null;
+  bit_depth: number | null;
+  domain: string;
+  camera: string;
+  decoder: Record<string, unknown>;
+  files: FileStatus[];
+}
 export interface Project { id: string; name: string; directory: string; frames: string[]; images: Record<string, Record<string, unknown>>; jobs: unknown[]; ui_state: Record<string, unknown>; }
-export interface Job { id: string; type: string; status: string; percent: number; message: string; result: unknown; error: string; params: Record<string, unknown>; }
+export interface Job { id: string; type: string; status: string; percent: number; message: string; result: unknown; error: string; error_code: string; params: Record<string, unknown>; }
 export interface FsEntry { name: string; path: string; is_dir: boolean; }
 export interface FsList { path: string; entries: FsEntry[]; image_count: number; }
 export interface RetouchSource { image_id: string; method: string | null; }
@@ -28,6 +37,22 @@ export interface RetouchStroke {
 export interface RetouchMutation {
   rev: number;
   dirty_tiles: { z: number; x: number; y: number }[];
+}
+export interface ImageAnalysis {
+  image_id: string;
+  revision: number;
+  pixels: number;
+  histograms: Record<'red' | 'green' | 'blue' | 'luminance', number[]>;
+  clipping: {
+    shadows: Record<'red' | 'green' | 'blue', number>;
+    highlights: Record<'red' | 'green' | 'blue', number>;
+  };
+}
+export interface WorkEstimate {
+  approximate: true;
+  memory_bytes: number;
+  seconds: number;
+  basis: string;
 }
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -66,6 +91,9 @@ export const api = {
   listJobs: () => req<Job[]>('GET', '/api/jobs'),
   getJob: (jid: string) => req<Job>('GET', `/api/jobs/${jid}`),
   cancelJob: (jid: string) => req('DELETE', `/api/jobs/${jid}`),
+  reorderJobs: (order: string[]) => req('POST', '/api/jobs/reorder', { order }),
+  estimate: (body: { width: number; height: number; frames: number; method: string; align: boolean }) =>
+    req<WorkEstimate>('POST', '/api/estimate', body),
   registerView: (id: string, path: string) =>
     req<{ image_id: string; levels: number; width: number; height: number }>(
       'POST',
@@ -105,5 +133,7 @@ export const api = {
     req<{ image_id: string }>('POST', `/api/retouch/${id}/flatten`, { name }),
   thumbUrl: (id: string, path: string) => `/api/projects/${id}/frame-thumb?path=${encodeURIComponent(path)}`,
   tileUrl: (imageId: string, z: number, x: number, y: number, rev?: number) =>
-    `/api/viewer/${imageId}/tile/${z}/${x}/${y}${rev === undefined ? '' : `?rev=${rev}`}`
+    `/api/viewer/${imageId}/tile/${z}/${x}/${y}${rev === undefined ? '' : `?rev=${rev}`}`,
+  imageAnalysis: (imageId: string, revision = 0) =>
+    req<ImageAnalysis>('GET', `/api/viewer/${imageId}/analysis?revision=${revision}`)
 };

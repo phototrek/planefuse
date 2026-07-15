@@ -1,7 +1,10 @@
 <script lang="ts">
-  import { api } from '$lib/api';
+  import { api, type ImageAnalysis } from '$lib/api';
   import { appState } from '$lib/stores.svelte';
   import DeepZoom from '$lib/viewer/DeepZoom.svelte';
+  import CompareViewer from '$lib/viewer/CompareViewer.svelte';
+  import Histogram from '$lib/viewer/Histogram.svelte';
+  import ViewerControls from '$lib/viewer/ViewerControls.svelte';
   import ProgressBar from '$lib/components/ProgressBar.svelte';
 
   interface RegisteredView {
@@ -14,6 +17,9 @@
   const viewCache: Record<string, RegisteredView> = {};
 
   let loadedView = $state<RegisteredView | null>(null);
+  let secondaryView = $state<RegisteredView | null>(null);
+  let analysis = $state<ImageAnalysis | null>(null);
+  let analysisError = $state('');
   let loading = $state(false);
   let viewError = $state('');
   // Plain (non-reactive) variable so it doesn't cause re-entrancy in $effect.
@@ -105,6 +111,34 @@
     }
   }
 
+  async function ensureView(path: string): Promise<RegisteredView> {
+    if (viewCache[path]) return viewCache[path];
+    if (!appState.project) throw new Error('No open project');
+    const reg = await api.registerView(appState.project.id, path);
+    const view = {
+      imageId: reg.image_id,
+      levels: reg.levels,
+      width: reg.width,
+      height: reg.height
+    };
+    viewCache[path] = view;
+    return view;
+  }
+
+  function comparisonPath(): string {
+    if (appState.compareMode === 'single') return '';
+    const target = appState.viewer;
+    if (appState.compareMode === 'side-by-side') {
+      const requested = appState.results.find((result) => result.id === appState.compareResultId);
+      const currentId = target?.kind === 'result' ? target.id : '';
+      return requested?.path
+        || appState.results.find((result) => result.id !== currentId)?.path
+        || '';
+    }
+    if (target?.kind === 'result') return appState.inputs[0]?.path ?? '';
+    return appState.results[appState.results.length - 1]?.path ?? '';
+  }
+
   // Trigger async image registration when viewer target changes.
   // This is intentionally async-in-effect because registration is async
   // and cannot be expressed as $derived.
@@ -121,7 +155,47 @@
     void loadView(key);
   });
 
+  let lastComparisonPath = '';
+  $effect(() => {
+    const mode = appState.compareMode;
+    const resultChoice = appState.compareResultId;
+    const inputCount = appState.inputs.length;
+    const resultCount = appState.results.length;
+    void mode; void resultChoice; void inputCount; void resultCount;
+    const path = comparisonPath();
+    if (!path) {
+      secondaryView = null;
+      lastComparisonPath = '';
+      return;
+    }
+    if (path === lastComparisonPath && secondaryView) return;
+    lastComparisonPath = path;
+    void ensureView(path).then((view) => {
+      if (comparisonPath() === path) secondaryView = view;
+    }).catch((error) => {
+      if (comparisonPath() === path) viewError = (error as Error).message;
+    });
+  });
+
+  let lastAnalysisId = '';
+  $effect(() => {
+    const imageId = loadedView?.imageId ?? '';
+    if (!imageId || imageId === lastAnalysisId) return;
+    lastAnalysisId = imageId;
+    analysis = null;
+    analysisError = '';
+    void api.imageAnalysis(imageId).then((value) => {
+      if (loadedView?.imageId === imageId) analysis = value;
+    }).catch((error) => {
+      if (loadedView?.imageId === imageId) {
+        analysis = null;
+        analysisError = (error as Error).message;
+      }
+    });
+  });
+
   function onmove(v: { scale: number; tx: number; ty: number }) {
+    appState.viewerTransform = v;
     if (!appState.project) return;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
@@ -174,13 +248,30 @@
   {:else if loading && !loadedView}
     <div class="empty"><span class="faint">Loading…</span></div>
   {:else if showViewer && loadedView}
-    <DeepZoom
-      imageId={loadedView.imageId}
-      levels={loadedView.levels}
-      width={loadedView.width}
-      height={loadedView.height}
-      {onmove}
-    />
+    <ViewerControls />
+    {#if appState.compareMode !== 'single' && secondaryView}
+      <CompareViewer
+        primary={loadedView}
+        secondary={secondaryView}
+        mode={appState.compareMode}
+        transform={appState.viewerTransform}
+        {onmove}
+      />
+    {:else}
+      <DeepZoom
+        imageId={loadedView.imageId}
+        levels={loadedView.levels}
+        width={loadedView.width}
+        height={loadedView.height}
+        view={appState.viewerTransform}
+        {onmove}
+      />
+    {/if}
+    {#if appState.showHistogram && analysis}
+      <Histogram {analysis} />
+    {:else if appState.showHistogram && analysisError}
+      <span class="analysis-error mono">Histogram unavailable: {analysisError}</span>
+    {/if}
   {:else}
     <div class="empty"><span class="faint">Select a frame or result to view</span></div>
   {/if}
@@ -200,4 +291,5 @@
   .jmsg { font-size: 11px; min-height: 14px; }
   .jparams { font-size: 11px; color: var(--text-faint); }
   .err { color: var(--bad); }
+  .analysis-error { position: absolute; z-index: 8; top: 50px; right: 12px; padding: 8px; background: var(--panel); color: var(--bad); font-size: 10px; }
 </style>

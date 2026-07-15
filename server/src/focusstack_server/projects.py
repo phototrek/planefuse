@@ -15,6 +15,7 @@ from typing import Any
 # Per-project write locks to prevent concurrent os.replace races on Windows.
 _project_locks: dict[str, threading.Lock] = {}
 _project_locks_lock = threading.Lock()
+_registry_lock = threading.Lock()
 
 
 def _get_project_lock(project_id: str) -> threading.Lock:
@@ -85,9 +86,10 @@ class ProjectStore:
         proj = Project(id=pid, name=name, directory=str(directory),
                        ui_state={"saved": False})
         self._save(proj)
-        reg = self._read_registry()
-        reg[pid] = str(directory)
-        self._write_registry(reg)
+        with _registry_lock:
+            reg = self._read_registry()
+            reg[pid] = str(directory)
+            self._write_registry(reg)
         return proj
 
     def _save(self, proj: Project) -> None:
@@ -113,12 +115,13 @@ class ProjectStore:
         return _load(pj) if pj.exists() else None
 
     def unregister(self, pid: str) -> bool:
-        reg = self._read_registry()
-        if pid not in reg:
-            return False
-        del reg[pid]
-        self._write_registry(reg)
-        return True
+        with _registry_lock:
+            reg = self._read_registry()
+            if pid not in reg:
+                return False
+            del reg[pid]
+            self._write_registry(reg)
+            return True
 
 
 def asdict_no_props(proj: Project) -> dict[str, Any]:

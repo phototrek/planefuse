@@ -40,6 +40,7 @@ export function connectJobs(): void {
       message: e.message ?? prev?.message ?? '',
       result: prev?.result ?? null,
       error: prev?.error ?? '',
+      error_code: prev?.error_code ?? '',
       params: prev?.params ?? {}
     };
     appState.jobs[e.job_id] = merged;

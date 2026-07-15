@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from focusstack_server.projects import ProjectStore
-from focusstack_server.runners import make_export_runner, make_stack_runner
+from focusstack_server.runners import make_export_runner, make_select_runner, make_stack_runner
 
 router = APIRouter(prefix="/api")
 
@@ -33,6 +33,8 @@ def enqueue(pid: str, body: EnqueueBody, request: Request) -> JSONResponse:
     q = request.app.state.jobs
     if body.type == "stack":
         work = make_stack_runner(store, proj, body.params)
+    elif body.type == "select":
+        work = make_select_runner(store, proj, body.params)
     elif body.type == "export":
         work = make_export_runner(store, proj, body.params)
     else:
@@ -78,6 +80,9 @@ class ExportBody(BaseModel):
     format: str = "tif"
     bit_depth: int = 16
     jpeg_quality: int = 95
+    compression: str = "zlib"
+    float_tiff_dest: str | None = None
+    depth_dest: str | None = None
 
 
 @router.post("/projects/{pid}/export")

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { isEditableTarget, primaryShortcut } from '$lib/shortcuts';
   import {
     api,
     type RetouchMutation,
@@ -150,7 +151,18 @@
           thumb: undefined as string | undefined,
           levels: undefined as number | undefined,
           width: undefined as number | undefined,
-          height: undefined as number | undefined
+          height: undefined as number | undefined,
+          domain: String(img.domain ?? 'rendered_rgb'),
+          storage: String(img.storage ?? 'rendered_16bit'),
+          metadata: typeof img.metadata === 'object' && img.metadata
+            ? img.metadata as Record<string, unknown>
+            : undefined,
+          decoder: typeof img.decoder === 'object' && img.decoder
+            ? img.decoder as Record<string, unknown>
+            : {},
+          provenance: typeof img.provenance === 'object' && img.provenance
+            ? img.provenance as Record<string, unknown>
+            : {}
         }));
       // Auto-select the new flattened result in the viewer.
       appState.viewer = { kind: 'result', id: image_id };
@@ -162,11 +174,11 @@
   }
 
   function shortcuts(e: KeyboardEvent) {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    if (isEditableTarget(e.target)) return;
+    if (primaryShortcut(e, 'z')) {
       e.preventDefault();
       e.shiftKey ? redo() : undo();
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+    } else if (primaryShortcut(e, 'y')) {
       e.preventDefault();
       redo();
     } else if (e.key === '[') {

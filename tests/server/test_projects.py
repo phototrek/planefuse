@@ -1,6 +1,9 @@
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi.testclient import TestClient
 
 from focusstack_server.main import create_app
+from focusstack_server.projects import ProjectStore
 
 
 def _c(tmp_path):
@@ -35,3 +38,15 @@ def test_projects_persist_across_app_restart(tmp_path):
     pid = c1.post("/api/projects", json={"path": str(tmp_path / "p"), "name": "P"}).json()["id"]
     c2 = _c(tmp_path)  # new app, same data_dir
     assert any(p["id"] == pid for p in c2.get("/api/projects").json())
+
+
+def test_concurrent_project_creation_never_clobbers_registry_entries(tmp_path):
+    store = ProjectStore(tmp_path / "data")
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        projects = list(
+            pool.map(
+                lambda index: store.create(tmp_path / f"project-{index}", f"P{index}"),
+                range(20),
+            )
+        )
+    assert {project.id for project in store.list()} == {project.id for project in projects}

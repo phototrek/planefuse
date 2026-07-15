@@ -9,7 +9,7 @@ export default defineConfig({
   use: { baseURL: `http://127.0.0.1:${PORT}` },
   webServer: {
     // Build the UI into the server static dir, then serve via the real server.
-    command: `npm run build && uv run --project .. python tests/fixtures/serve_test.py ${PORT}`,
+    command: `npm run build && uv run --frozen --extra cpu --extra raw --project .. python tests/fixtures/serve_test.py ${PORT}`,
     url: `http://127.0.0.1:${PORT}/api/system`,
     env: { ...process.env, FOCUSSTACK_DEVICE: DEVICE },
     reuseExistingServer: false,

@@ -32,3 +32,9 @@ def test_viewer_serves_tile(tmp_path):
     t = c.get(f"/api/viewer/{image_id}/tile/{levels - 1}/0/0")
     assert t.status_code == 200
     assert t.headers["content-type"].startswith("image/")
+    again = c.post(
+        f"/api/projects/{pid}/viewer/register",
+        json={"path": str(proj_dir / "cache" / "img.tif")},
+    )
+    assert again.json()["image_id"] == image_id
+    assert c.get(f"/api/viewer/{image_id}/analysis").status_code == 200

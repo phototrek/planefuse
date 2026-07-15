@@ -61,3 +61,16 @@ def test_job_dict_includes_params_for_rerun(tmp_path):
     job = c.get(f"/api/jobs/{jid}").json()
     assert "params" in job
     assert job["params"]["method"] == "pmax"
+
+
+def test_select_job_persists_reviewable_proposal(tmp_path):
+    c, pid = _ready_project(tmp_path)
+    jid = c.post(
+        f"/api/projects/{pid}/jobs",
+        json={"type": "select", "params": {"device": "cpu", "select": {}}},
+    ).json()["id"]
+    job = _wait(c, jid)
+    assert job["status"] == "done", job
+    proposal = c.get(f"/api/projects/{pid}").json()["ui_state"]["selectionProposal"]
+    assert sorted(proposal) == ["coverage", "kept", "params", "redundant", "warning"]
+    assert proposal["kept"]

@@ -2,9 +2,9 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api';
   import { appState } from '$lib/stores.svelte';
-  import ProgressBar from '$lib/components/ProgressBar.svelte';
-
-  const ACTIVE = new Set(['pending', 'running']);
+  import JobQueue from './JobQueue.svelte';
+  import AlignmentReview from './AlignmentReview.svelte';
+  import SelectionReview from './SelectionReview.svelte';
 
   let retouchBusy = $state<Record<string, boolean>>({});
   let retouchError = $state('');
@@ -66,13 +66,15 @@
     }
   });
 
-  let activeJobs = $derived(
-    Object.values(appState.jobs).filter((j) => ACTIVE.has(j.status))
-  );
-
   let exportJob = $derived(
     appState.exportJobId ? appState.jobs[appState.exportJobId] : null
   );
+  let reviewedResult = $derived.by(() => {
+    const target = appState.viewer;
+    return target?.kind === 'result'
+      ? appState.results.find((result) => result.id === target.id)
+      : undefined;
+  });
 </script>
 
 <div class="render-drawer" class:closed={!appState.drawerOpen}>
@@ -97,6 +99,10 @@
     {/if}
 
     {#if retouchError}<span class="err mono">{retouchError}</span>{/if}
+    {#if reviewedResult}
+      <AlignmentReview result={reviewedResult} />
+      <SelectionReview result={reviewedResult} />
+    {/if}
   </div>
 
   {#if appState.drawerOpen}
@@ -134,26 +140,9 @@
       {/each}
 
       <!-- Active jobs -->
-      {#each activeJobs as job (job.id)}
-        <div
-          class="job-chip"
-          class:active={appState.viewer?.kind === 'job' && (appState.viewer?.id === job.id)}
-          data-testid="ws-job"
-          role="button"
-          tabindex="0"
-          onclick={() => (appState.viewer = { kind: 'job', id: job.id })}
-          onkeydown={(e) => e.key === 'Enter' && (appState.viewer = { kind: 'job', id: job.id })}
-        >
-          <div class="job-info">
-            <span class="jtype mono">{job.type}</span>
-            <span class="jstatus mono">{job.status}</span>
-          </div>
-          <ProgressBar percent={job.percent} status={job.status} />
-          <div class="jmsg mono faint">{job.message}</div>
-        </div>
-      {/each}
+      <JobQueue />
 
-      {#if appState.results.length === 0 && activeJobs.length === 0}
+      {#if appState.results.length === 0 && Object.keys(appState.jobs).length === 0}
         <div class="empty faint">No results yet — run a stack to see results here.</div>
       {/if}
     </div>
@@ -230,25 +219,6 @@
   }
   .result-actions { display: flex; gap: 4px; }
   .action-btn { font-size: 10px; padding: 3px 6px; }
-  .job-chip {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    width: 160px;
-    flex-shrink: 0;
-    cursor: pointer;
-    border-radius: var(--radius);
-    border: 2px solid transparent;
-    padding: 8px;
-    background: var(--panel-2);
-    transition: border-color 0.12s;
-  }
-  .job-chip:hover { border-color: var(--line-strong); }
-  .job-chip.active { border-color: var(--accent); }
-  .job-info { display: flex; justify-content: space-between; align-items: center; }
-  .jtype { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-bright); }
-  .jstatus { font-size: 10px; text-transform: uppercase; color: var(--text-dim); }
-  .jmsg { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .empty { padding: 16px; font-size: 12px; }
   .done-msg { color: var(--good); font-size: 12px; font-weight: 500; }
   .err { color: var(--bad); font-size: 12px; }

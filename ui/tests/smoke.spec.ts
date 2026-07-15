@@ -285,7 +285,12 @@ test('real Zion TIFFs: workspace: add -> PMax -> view -> export', async ({ page 
   const stackBody = stackJobResponse.request().postDataJSON() as {
     params: { align?: { max_long_edge: number } };
   };
-  expect(stackBody.params.align).toEqual({ max_long_edge: 2048 });
+  expect(stackBody.params.align).toMatchObject({
+    max_long_edge: 2048,
+    model: 'similarity',
+    interp: 'lanczos3',
+    normalize_brightness: true
+  });
   const stackJobId = ((await stackJobResponse.json()) as { id: string }).id;
   await waitForJob(page, stackJobId, 5 * 60_000);
 

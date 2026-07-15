@@ -10,6 +10,8 @@ from typing import Any
 import tifffile
 
 from focusstack.align import AlignParams
+from focusstack.align import align_stack
+from focusstack.backend import get_device
 from focusstack.errors import DngExportError
 from focusstack.io import (
     ProcessingDomain,
@@ -22,6 +24,9 @@ from focusstack.io import (
 )
 from focusstack.pipeline import stack_frames
 from focusstack.select import SelectParams
+from focusstack.select import select_frames
+from focusstack.stack import DirFrameSource
+from focusstack.stack.base import FrameSource
 from focusstack_server.projects import Project, ProjectStore
 
 
@@ -77,9 +82,64 @@ def make_stack_runner(store: ProjectStore, proj: Project, params: dict[str, Any]
             depth_id = uuid.uuid4().hex[:12]
             dpath = proj.cache / f"{depth_id}.tif"
             save_image(result.aux["depth"], dpath, bit_depth=16)
-            latest.images[depth_id] = {"kind": "depth", "path": str(dpath)}
+            latest.images[depth_id] = {
+                "kind": "depth",
+                "path": str(dpath),
+                "parent": image_id,
+            }
         store.save(latest)
         return {"image_id": image_id}
+
+    return run
+
+
+def make_select_runner(store: ProjectStore, proj: Project, params: dict[str, Any]) -> Callable:
+    paths = [Path(path) for path in (params.get("frames") or proj.frames)]
+    device = get_device(str(params.get("device", "auto")))
+    align_params = AlignParams(**params["align"]) if params.get("align") else None
+    select_params = SelectParams(**(params.get("select") or {}))
+
+    def run(progress: Callable[[str, float], None], cancel: Callable[[], bool]) -> dict:
+        source: FrameSource = DirFrameSource(paths)
+        masks = None
+        if align_params is not None:
+            cache = proj.cache / f"selection-{uuid.uuid4().hex[:8]}"
+            report = align_stack(
+                source,
+                cache,
+                device,
+                align_params,
+                progress=progress,
+                cancel=cancel,
+            )
+            source = report.cache.frame_source()
+            masks = report.cache.mask_source()
+        proposal = select_frames(
+            source,
+            device,
+            select_params,
+            masks=masks,
+            progress=progress,
+        )
+        payload = {
+            "kept": proposal.kept,
+            "redundant": proposal.redundant,
+            "warning": proposal.warning,
+            "coverage": {
+                "reliable_cells": int(proposal.reliable.sum()),
+                "total_cells": int(proposal.reliable.size),
+            },
+            "params": {
+                "focus_tolerance": select_params.focus_tolerance,
+                "kurtosis_threshold": select_params.kurtosis_threshold,
+                "grid_rows": select_params.grid_rows,
+                "grid_cols": select_params.grid_cols,
+            },
+        }
+        latest = store.get(proj.id) or proj
+        latest.ui_state["selectionProposal"] = payload
+        store.save(latest)
+        return payload
 
     return run
 
@@ -93,6 +153,7 @@ def make_export_runner(
     dest = Path(params["dest"])
     bit_depth = int(params.get("bit_depth", 16))
     jpeg_quality = int(params.get("jpeg_quality", 95))
+    compression = str(params.get("compression", "zlib"))
     info = proj.images.get(image_id)
 
     def run(progress: Callable[[str, float], None], cancel: Callable[[], bool]) -> dict:
@@ -144,11 +205,44 @@ def make_export_runner(
                 img,
                 dest,
                 bit_depth=bit_depth,
+                compression=compression,
                 jpeg_quality=jpeg_quality,
                 metadata=metadata,
                 provenance=provenance,
             )
             payload = {"dest": str(dest)}
+
+        float_tiff_value = params.get("float_tiff_dest")
+        if float_tiff_value:
+            float_tiff_dest = Path(str(float_tiff_value))
+            float_tiff_dest.parent.mkdir(parents=True, exist_ok=True)
+            save_float_tiff(
+                img,
+                float_tiff_dest,
+                metadata=metadata,
+                provenance=provenance,
+            )
+            payload["float_tiff_dest"] = str(float_tiff_dest)
+
+        depth_value = params.get("depth_dest")
+        if depth_value:
+            depth_info = next(
+                (
+                    candidate
+                    for candidate in proj.images.values()
+                    if candidate.get("kind") == "depth"
+                    and candidate.get("parent") == image_id
+                    and candidate.get("path")
+                ),
+                None,
+            )
+            if depth_info is None:
+                raise ValueError("this result has no depth-map companion")
+            depth_dest = Path(str(depth_value))
+            depth_dest.parent.mkdir(parents=True, exist_ok=True)
+            depth = load_image(Path(str(depth_info["path"]))).pixels[..., 0]
+            save_image(depth, depth_dest, bit_depth=16, compression=compression)
+            payload["depth_dest"] = str(depth_dest)
         progress("done", 1.0)
         return payload
 

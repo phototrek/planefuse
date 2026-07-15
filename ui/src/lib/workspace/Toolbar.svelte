@@ -2,9 +2,10 @@
   import { onMount } from 'svelte';
   import { api, type Algorithm } from '$lib/api';
   import { appState } from '$lib/stores.svelte';
-  import { applyTemplate, todayISO, type TemplateCtx } from './template';
   import ParamForm from '$lib/components/ParamForm.svelte';
-  import FolderBrowser from '$lib/components/FolderBrowser.svelte';
+  import ExportPanel from './ExportPanel.svelte';
+  import EstimateBadge from './EstimateBadge.svelte';
+  import ProjectControls from './ProjectControls.svelte';
 
   // ── Algorithm + params ──────────────────────────────────────────────────────
   let algos = $state<Algorithm[]>([]);
@@ -12,36 +13,51 @@
   let values = $state<Record<string, unknown>>({});  // tuned params, only when exactly one selected
   let useAlign = $state(true);
   let maxLongEdge = $state(2048);
+  let alignModel = $state('similarity');
+  let alignInterpolation = $state('lanczos3');
+  let normalizeBrightness = $state(true);
+  let correlationThreshold = $state(0.9);
+  let dropMisaligned = $state(false);
   let useSelect = $state(false);
+  let selectionAccepted = $state(false);
+  let selectionJobId = $state<string | null>(null);
   let presets = $state<{ name: string; params: Record<string, unknown> }[]>([]);
   let presetName = $state('');
 
   // ── UI toggles ──────────────────────────────────────────────────────────────
   let showOptions = $state(false);
-  let showExport = $state(false);
-
-  // ── Export popover state ─────────────────────────────────────────────────────
-  let exportFolder = $state('');
-  let exportTemplate = $state('{stack_name}_{method}');
-  let exportFormat = $state<'tif' | 'jpg' | 'png'>('tif');
-  let exportBitDepth = $state(16);
-  let exportJpegQuality = $state(95);
-  let exportDestOverride = $state<string | null>(null);
-
-  // ── Save state ───────────────────────────────────────────────────────────────
-  // Use override pattern: user edit overrides, else derive from project
-  let projectNameOverride = $state<string | null>(null);
-  let saveBusy = $state(false);
-  let saveError = $state('');
-  let saveDone = $state(false);
+  let proposedGroups = $state<string[][]>([]);
 
   // ── Error state ──────────────────────────────────────────────────────────────
   let runError = $state('');
-  let exportError = $state('');
+  let selectionProposal = $derived(
+    appState.project?.ui_state?.selectionProposal as {
+      kept: number[];
+      redundant: number[];
+      warning: string | null;
+      coverage: { reliable_cells: number; total_cells: number };
+    } | undefined
+  );
+
+  let inputSignature = '';
+  $effect(() => {
+    const signature = appState.inputs.map((frame) => frame.path).join('\n');
+    if (inputSignature && signature !== inputSignature) selectionAccepted = false;
+    inputSignature = signature;
+  });
+
+  $effect(() => {
+    if (!selectionJobId || appState.jobs[selectionJobId]?.status !== 'done' || !appState.project) return;
+    const projectId = appState.project.id;
+    selectionJobId = null;
+    void api.getProject(projectId).then((project) => {
+      appState.project = project;
+      selectionAccepted = false;
+    });
+  });
 
   // Param tuning is offered only when exactly one algo is selected.
   let current = $derived(selected.length === 1 ? algos.find((a) => a.name === selected[0]) : undefined);
-  let projectName = $derived(projectNameOverride ?? appState.project?.name ?? '');
 
   function resetValues(a: Algorithm | undefined) {
     const v: Record<string, unknown> = {};
@@ -80,7 +96,16 @@
       device: appState.system?.device ?? 'auto',
       algo_params: selected.length === 1 && selected[0] === name ? values : defaultsFor(name)
     };
-    if (useAlign) params.align = { max_long_edge: maxLongEdge };
+    if (useAlign) {
+      params.align = {
+        max_long_edge: maxLongEdge,
+        model: alignModel,
+        interp: alignInterpolation,
+        normalize_brightness: normalizeBrightness,
+        correlation_threshold: correlationThreshold,
+        drop_misaligned: dropMisaligned
+      };
+    }
     if (useSelect) params.select = {};
     return params;
   }
@@ -142,128 +167,45 @@
     runError = '';
     try {
       const { groups } = await api.autoGroup(appState.project.id);
-      for (const g of groups) {
-        for (const name of selected) {
-          const res = await api.enqueueStack(appState.project.id, { ...buildParamsFor(name), frames: g });
-          appState.stackJobIds = [...appState.stackJobIds, res.id];
-        }
-      }
-      appState.drawerOpen = true;
+      proposedGroups = groups;
     } catch (e) {
       runError = (e as Error).message;
     }
   }
 
-  // ── Export ───────────────────────────────────────────────────────────────────
-
-  // Load the persisted template when the project changes.
-  $effect(() => {
-    const t = appState.project?.ui_state?.exportTemplate;
-    if (typeof t === 'string' && t) exportTemplate = t;
-  });
-
-  function exportCtx(): TemplateCtx {
-    const id = getExportImageId();
-    const idx = appState.results.findIndex((r) => r.id === id);
-    const result = idx >= 0 ? appState.results[idx] : undefined;
-    return {
-      stack_name: projectName || 'stacked',
-      method: result?.method ?? '',
-      frames: result?.frames,
-      date: todayISO(),
-      seq: (idx >= 0 ? idx : 0) + 1
+  async function reviewSelection() {
+    if (!appState.project) return;
+    const params: Record<string, unknown> = {
+      device: appState.system?.device ?? 'auto',
+      select: {}
     };
+    if (useAlign) params.align = (buildParamsFor(selected[0] ?? 'pmax').align);
+    const response = await api.enqueueJob(appState.project.id, 'select', params);
+    selectionJobId = response.id;
+    appState.drawerOpen = true;
   }
 
-  let exportStem = $derived(applyTemplate(exportTemplate, exportCtx()) || 'stacked');
-  let exportFilename = $derived(`${exportStem}.${exportFormat}`);
-
-  let exportAutoDest = $derived.by(() => {
-    if (!exportFolder) return '';
-    const sep = exportFolder.includes('\\') ? '\\' : '/';
-    return `${exportFolder.replace(/[\\/]+$/, '')}${sep}${exportFilename}`;
-  });
-
-  let exportDest = $derived(exportDestOverride ?? exportAutoDest);
-
-  function getExportImageId(): string | null {
-    const viewer = appState.viewer;
-    if (viewer?.kind === 'result') {
-      const result = appState.results.find((r) => r.id === viewer.id);
-      if (result) return result.id;
-    }
-    if (appState.results.length > 0) return appState.results[appState.results.length - 1].id;
-    return null;
-  }
-
-  async function doExport() {
+  async function stackGroups() {
     if (!appState.project) return;
-    const imgId = getExportImageId();
-    if (!imgId || !exportDest) return;
-    exportError = '';
-    try {
-      const body: Record<string, unknown> = {
-        image_id: imgId,
-        dest: exportDest,
-        format: exportFormat,
-        bit_depth: exportBitDepth,
-        jpeg_quality: exportJpegQuality
-      };
-      const r = await api.export(appState.project.id, body);
-      appState.exportJobId = r.id;
-      api.patchUiState(appState.project.id, { exportTemplate }).catch(() => {});
-      showExport = false;
-    } catch (e) {
-      exportError = (e as Error).message;
+    for (const group of proposedGroups) {
+      for (const name of selected) {
+        const response = await api.enqueueStack(appState.project.id, {
+          ...buildParamsFor(name),
+          frames: group
+        });
+        appState.stackJobIds = [...appState.stackJobIds, response.id];
+      }
     }
+    proposedGroups = [];
+    appState.drawerOpen = true;
   }
 
-  // ── Save ─────────────────────────────────────────────────────────────────────
-  async function save() {
-    if (!appState.project) return;
-    saveBusy = true;
-    saveError = '';
-    saveDone = false;
-    try {
-      const result = await api.saveProject(appState.project.id, {
-        name: projectName,
-        saved: true
-      });
-      appState.project.name = result.name;
-      projectNameOverride = null; // Reset so derived picks up new name from project
-      saveDone = true;
-      setTimeout(() => { saveDone = false; }, 2000);
-    } catch (e) {
-      saveError = (e as Error).message;
-    } finally {
-      saveBusy = false;
-    }
-  }
-
-  let canExport = $derived(appState.results.length > 0);
 </script>
 
 <div class="toolbar">
   <!-- Left: project name + save -->
   <div class="section project-section">
-    <input
-      class="project-name"
-      type="text"
-      value={projectName}
-      oninput={(e) => (projectNameOverride = e.currentTarget.value)}
-      data-testid="ws-project-name"
-      placeholder="Untitled"
-      aria-label="Project name"
-    />
-    <button
-      class="ghost"
-      data-testid="ws-save"
-      disabled={saveBusy || !appState.project}
-      onclick={save}
-    >
-      {saveBusy ? 'Saving…' : saveDone ? '✓ Saved' : 'Save'}
-    </button>
-    {#if saveError}<span class="err mono">{saveError}</span>{/if}
+    <ProjectControls />
   </div>
 
   <div class="divider"></div>
@@ -294,8 +236,8 @@
     <button
       class="primary"
       data-testid="ws-run"
-      disabled={!appState.project || appState.inputs.length === 0 || selected.length === 0}
-      title={selected.length === 0 ? 'Select at least one algorithm' : `Run ${selected.length} algorithm(s)`}
+      disabled={!appState.project || appState.inputs.length === 0 || selected.length === 0 || !appState.scanReport?.ok || (useSelect && !selectionAccepted)}
+      title={!appState.scanReport?.ok ? 'Resolve input validation issues first' : useSelect && !selectionAccepted ? 'Review and accept smart selection first' : selected.length === 0 ? 'Select at least one algorithm' : `Run ${selected.length} algorithm(s)`}
       onclick={run}
     >
       Run{selected.length > 1 ? ` ×${selected.length}` : ''}
@@ -317,75 +259,7 @@
 
   <!-- Right: export -->
   <div class="section export-section">
-    <div class="export-wrap">
-      <button
-        class="ghost"
-        data-testid="ws-export"
-        disabled={!canExport}
-        onclick={() => (showExport = !showExport)}
-        title={canExport ? 'Export result' : 'No result to export yet'}
-      >
-        Export{showExport ? ' ▲' : ' ▾'}
-      </button>
-
-      {#if showExport}
-        <div class="popover panel">
-          <div class="export-grid">
-            <label>
-              <span class="lbl">Format</span>
-              <select bind:value={exportFormat}>
-                <option value="tif">TIFF</option>
-                <option value="png">PNG</option>
-                <option value="jpg">JPEG</option>
-              </select>
-            </label>
-            <label>
-              <span class="lbl">Bit depth</span>
-              <select bind:value={exportBitDepth}>
-                <option value={8}>8-bit</option>
-                <option value={16}>16-bit</option>
-              </select>
-            </label>
-            {#if exportFormat === 'jpg'}
-              <label>
-                <span class="lbl">Quality</span>
-                <input type="number" bind:value={exportJpegQuality} min="1" max="100" />
-              </label>
-            {/if}
-            <label class="tpl">
-              <span class="lbl">Name template</span>
-              <input type="text" bind:value={exportTemplate} data-testid="export-template" />
-            </label>
-            <div class="tpl-preview faint mono" data-testid="export-preview">{exportFilename}</div>
-            <div class="tpl-hint faint">{`{stack_name} {method} {frames} {date} {seq}`}</div>
-          </div>
-          <div class="dest-row">
-            <span class="lbl">Output folder</span>
-            <FolderBrowser bind:value={exportFolder} />
-          </div>
-          <label class="dest-row">
-            <span class="lbl">Full path</span>
-            <input
-              class="mono dest-input"
-              type="text"
-              value={exportDest}
-              data-testid="export-dest"
-              oninput={(e) => (exportDestOverride = e.currentTarget.value)}
-              placeholder="C:\out\stacked.tif"
-            />
-          </label>
-          {#if exportError}<p class="err mono">{exportError}</p>{/if}
-          <div class="export-actions">
-            <button
-              class="primary"
-              data-testid="export-go"
-              disabled={!exportDest}
-              onclick={doExport}
-            >Export</button>
-          </div>
-        </div>
-      {/if}
-    </div>
+    <ExportPanel />
   </div>
 </div>
 
@@ -397,13 +271,69 @@
     {#if useAlign}
       <span class="faint mono">max long edge</span>
       <input class="num" type="number" bind:value={maxLongEdge} min="128" max="8192" step="1" />
+      <select bind:value={alignModel} aria-label="Alignment model">
+        <option value="translation">Translation</option>
+        <option value="similarity">Similarity</option>
+        <option value="perspective">Perspective</option>
+      </select>
+      <select bind:value={alignInterpolation} aria-label="Warp interpolation">
+        <option value="lanczos3">Lanczos-3</option>
+        <option value="bicubic">Bicubic</option>
+        <option value="bilinear">Bilinear</option>
+      </select>
+      <label class="inline-check"><input type="checkbox" bind:checked={normalizeBrightness} /> Match brightness</label>
+      <label class="inline-check"><input type="checkbox" bind:checked={dropMisaligned} /> Exclude low quality</label>
+      <span class="faint mono">ECC ≥</span>
+      <input class="num threshold" type="number" bind:value={correlationThreshold} min="0" max="1" step="0.01" />
     {/if}
   </label>
   <label class="toggle">
     <input type="checkbox" bind:checked={useSelect} />
     <span>Smart frame selection</span>
   </label>
+  {#if useSelect}
+    <button class="ghost" disabled={!!selectionJobId || !appState.scanReport?.ok} onclick={reviewSelection}>
+      {selectionJobId ? 'Analyzing…' : 'Review proposal'}
+    </button>
+    {#if selectionAccepted}<span class="good mono">proposal accepted</span>{/if}
+  {/if}
+  <EstimateBadge method={selected[0] ?? 'pmax'} align={useAlign} />
 </div>
+
+{#if useSelect && selectionProposal}
+  <div class="selection-proposal panel" data-testid="selection-proposal">
+    <div>
+      <strong>Smart-selection proposal</strong>
+      <span>{selectionProposal.kept.length} kept · {selectionProposal.redundant.length} redundant</span>
+      <span class="mono faint">coverage cells {selectionProposal.coverage.reliable_cells}/{selectionProposal.coverage.total_cells}</span>
+      {#if selectionProposal.warning}<span class="warn">{selectionProposal.warning}</span>{/if}
+    </div>
+    <div class="proposal-strip">
+      {#each appState.inputs as frame, index}
+        <span class:excluded={selectionProposal.redundant.includes(index)} title={frame.name}>{index + 1}</span>
+      {/each}
+    </div>
+    <button class="primary" onclick={() => (selectionAccepted = true)}>Accept proposal</button>
+  </div>
+{/if}
+
+{#if proposedGroups.length > 0}
+  <div class="group-review panel" data-testid="group-review">
+    <div>
+      <strong>Review batch groups</strong>
+      <span class="faint">Nothing is queued until you confirm.</span>
+    </div>
+    <ol>
+      {#each proposedGroups as group, index}
+        <li><span>Group {index + 1}</span><span class="mono faint">{group.length} frames · {group[0]?.split(/[\\/]/).pop()} → {group[group.length - 1]?.split(/[\\/]/).pop()}</span></li>
+      {/each}
+    </ol>
+    <div class="group-actions">
+      <button onclick={() => (proposedGroups = [])}>Cancel</button>
+      <button class="primary" data-testid="stack-all-groups" onclick={stackGroups}>Stack all groups</button>
+    </div>
+  </div>
+{/if}
 
 <!-- Options panel (full-width, below align row) -->
 {#if showOptions}
@@ -461,16 +391,6 @@
     flex-shrink: 0;
   }
   .project-section { min-width: 0; }
-  .project-name {
-    font-size: 13px;
-    font-weight: 600;
-    width: 160px;
-    padding: 5px 8px;
-    background: transparent;
-    border: 1px solid transparent;
-  }
-  .project-name:hover { border-color: var(--line-strong); }
-  .project-name:focus { background: var(--bg); border-color: var(--accent); }
   .algo-section { gap: 8px; flex-wrap: nowrap; flex-shrink: 0; }
   .algos { display: flex; gap: 4px; }
   .algo {
@@ -482,29 +402,6 @@
   }
   .algo.sel { background: var(--accent); color: #1a0d04; border-color: var(--accent); }
   .export-section { margin-left: auto; }
-  .export-wrap { position: relative; }
-  .popover {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    width: 380px;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    z-index: 100;
-    box-shadow: var(--shadow);
-  }
-  .export-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
-  .export-grid label { display: flex; flex-direction: column; gap: 4px; }
-  .dest-row { display: flex; flex-direction: column; gap: 6px; }
-  .dest-input { width: 100%; font-family: var(--font-mono); font-size: 11px; }
-  .export-actions { display: flex; justify-content: flex-end; }
-  .lbl { font-size: 12px; color: var(--text-dim); }
   .align-row {
     display: flex;
     align-items: center;
@@ -525,11 +422,23 @@
   .toggle { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
   .toggle input[type='checkbox'] { width: 14px; height: 14px; accent-color: var(--accent); }
   .num { width: 80px; }
+  .threshold { width: 64px; }
+  .inline-check { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .group-review { display: grid; grid-template-columns: minmax(180px, .5fr) 1fr auto; gap: 14px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); font-size: 11px; }
+  .group-review > div:first-child { display: flex; flex-direction: column; gap: 3px; }
+  .group-review ol { display: flex; gap: 8px; margin: 0; padding: 0; list-style: none; overflow-x: auto; }
+  .group-review li { display: flex; flex-direction: column; min-width: 150px; }
+  .group-actions { display: flex; gap: 6px; }
+  .selection-proposal { display: grid; grid-template-columns: minmax(200px, .5fr) 1fr auto; gap: 14px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); font-size: 10px; }
+  .selection-proposal > div:first-child { display: flex; flex-direction: column; gap: 2px; }
+  .proposal-strip { display: flex; gap: 2px; overflow-x: auto; }
+  .proposal-strip span { min-width: 20px; padding: 3px; text-align: center; color: var(--good); background: color-mix(in srgb, var(--good) 15%, var(--panel)); }
+  .proposal-strip span.excluded { opacity: .35; color: var(--text-faint); text-decoration: line-through; }
+  .good { color: var(--good); font-size: 10px; }
+  .warn { color: var(--warn, #e1a857); }
   .preset-row { display: flex; gap: 6px; }
   .preset-list { display: flex; flex-wrap: wrap; gap: 6px; }
   .preset-chip { display: flex; align-items: center; border: 1px solid var(--line); border-radius: var(--radius); }
   .del { color: var(--text-faint); padding: 5px 7px; }
   .err { color: var(--bad); font-size: 11px; }
-  .tpl-preview { font-size: 11px; font-family: var(--font-mono); color: var(--text-faint); grid-column: 1 / -1; }
-  .tpl-hint { font-size: 10px; color: var(--text-faint); grid-column: 1 / -1; letter-spacing: 0.02em; }
 </style>

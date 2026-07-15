@@ -27,3 +27,16 @@ def test_algorithms_lists_registry_with_param_metadata(tmp_path):
     assert any(p["name"] == "selection_smoothing" for p in pmax["params"])
     p0 = pmax["params"][0]
     assert {"name", "label", "type", "default"} <= set(p0)
+
+
+def test_estimate_reports_explicitly_approximate_memory_and_time(tmp_path):
+    response = _client(tmp_path).post(
+        "/api/estimate",
+        json={"width": 6000, "height": 4000, "frames": 50, "method": "pmax", "align": True},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["approximate"] is True
+    assert body["memory_bytes"] > 0
+    assert body["seconds"] > 0
+    assert body["basis"]

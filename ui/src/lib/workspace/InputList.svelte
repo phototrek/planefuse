@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, type ScanReport } from '$lib/api';
   import { appState } from '$lib/stores.svelte';
+  import ValidationPanel from './ValidationPanel.svelte';
 
   let showAdd = $state(false);
   let folder = $state('');        // paste-a-path fallback (no copy, also the e2e seam)
@@ -16,6 +17,7 @@
     try {
       const report = await api.addFrames(appState.project.id, paths);
       appState.inputs = report.files;
+      appState.scanReport = report;
       lastReport = report;
       appState.project = await api.getProject(appState.project.id);
       // Auto-select the first input into the viewer on first add.
@@ -53,6 +55,7 @@
     try {
       const report = await api.removeFrames(appState.project.id, [path]);
       appState.inputs = report.files;
+      appState.scanReport = report;
       appState.project = await api.getProject(appState.project.id);
       // If the removed frame was the active viewer target, clear it.
       if (appState.viewer?.kind === 'input' && appState.viewer.path === path) {
@@ -134,9 +137,12 @@
     </div>
   {/if}
 
+  <ValidationPanel />
+
   <div class="frames">
     {#each appState.inputs as f (f.path)}
       <div
+        id={'input-' + encodeURIComponent(f.path)}
         class="frame-row"
         class:active={appState.viewer?.kind === 'input' && appState.viewer.path === f.path}
         class:invalid={f.status !== 'ok'}

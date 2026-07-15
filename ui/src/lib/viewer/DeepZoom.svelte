@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
+  import { isEditableTarget } from '$lib/shortcuts';
 
   let {
     imageId,
@@ -10,7 +11,8 @@
     onmove,
     tileVersion,
     brushRadius,
-    onstroke
+    onstroke,
+    view
   }: {
     imageId: string;
     levels: number;
@@ -20,6 +22,7 @@
     tileVersion?: (z: number, x: number, y: number) => number;
     brushRadius?: number;
     onstroke?: (points: [number, number, number][]) => void;
+    view?: { scale: number; tx: number; ty: number } | null;
   } = $props();
 
   const TILE = 256;
@@ -32,6 +35,13 @@
   let scale = $state(1);
   let tx = $state(0);
   let ty = $state(0);
+
+  $effect(() => {
+    if (!view) return;
+    if (Math.abs(scale - view.scale) > 1e-6) scale = view.scale;
+    if (Math.abs(tx - view.tx) > 1e-6) tx = view.tx;
+    if (Math.abs(ty - view.ty) > 1e-6) ty = view.ty;
+  });
 
   function fit() {
     if (!cw || !ch) return;
@@ -123,7 +133,7 @@
   }
 
   function onkey(e: KeyboardEvent) {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+    if (isEditableTarget(e.target)) return;
     if (e.code === 'Space' && onstroke) {
       spaceHeld = true;
       e.preventDefault();
@@ -194,6 +204,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="viewport"
+  data-testid="deep-zoom"
   bind:this={viewport}
   role="application"
   aria-label="Deep-zoom image viewer"
