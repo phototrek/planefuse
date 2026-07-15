@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).parents[1]
 
@@ -115,6 +117,10 @@ def test_root_macos_launcher_delegates_and_keeps_failures_visible():
     assert 'exit "$status"' in text
 
 
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="macOS launcher behavior requires a POSIX pseudo-terminal",
+)
 def test_root_macos_launcher_pauses_only_on_failure_and_preserves_status(tmp_path):
     project = tmp_path / "focus-stacker"
     scripts = project / "scripts"
