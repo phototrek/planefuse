@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -52,3 +53,24 @@ def test_benchmark_records_runtime_versions():
     report = json.loads(completed.stdout)
     assert report["python_version"].startswith("3.12")
     assert report["torch_version"]
+
+
+def test_root_macos_launcher_delegates_and_keeps_failures_visible():
+    launcher = ROOT / "Launch FocusStack.command"
+    text = launcher.read_text()
+    assert os.access(launcher, os.X_OK)
+    assert 'scripts/start-macos.sh' in text
+    assert 'status=$?' in text
+    assert 'read -r' in text
+    assert 'exit "$status"' in text
+
+
+def test_root_windows_launcher_prefers_gpu_and_falls_back_to_cpu():
+    text = (ROOT / "Launch FocusStack.bat").read_text().lower()
+    probe = text.index("nvidia-smi")
+    gpu = text.index("scripts\\start-windows-gpu.bat")
+    cpu = text.index("scripts\\start-windows-cpu.bat")
+    assert probe < gpu < cpu
+    assert "if errorlevel 1 goto cpu" in text
+    assert "pause" in text
+    assert "exit /b %focusstack_exit%" in text
