@@ -91,7 +91,8 @@ class JobQueue:
     def _emit(self, job: Job, frame_index: int | None = None, level: str = "info") -> None:
         self._on_event({"job_id": job.id, "type": job.type, "status": job.status,
                         "stage": job.message, "percent": job.percent,
-                        "frame_index": frame_index, "message": job.message, "level": level})
+                        "frame_index": frame_index, "message": job.message, "level": level,
+                        "params": job.params})
 
     def _run(self) -> None:
         while not self._stop.is_set():

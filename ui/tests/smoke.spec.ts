@@ -86,6 +86,43 @@ test('workspace: add -> PMax -> view -> export', async ({ page }) => {
   const jobId = ((await (await jobResponse).json()) as { id: string }).id;
   await waitForJob(page, jobId);
 
+  // Settings stay fully inside a compact viewport and are readable without
+  // exposing raw JSON or adding an internal scroll area.
+  await page.setViewportSize({ width: 640, height: 480 });
+  await page.locator(`[data-testid="job-settings"][data-job-id="${jobId}"]`).click();
+  const settings = page.locator(
+    `[data-testid="job-settings-dialog"][data-job-id="${jobId}"]`
+  );
+  await expect(settings).toBeVisible();
+  await expect(settings).toContainText('Focus stack settings');
+  await expect(settings).toContainText('Stacking method');
+  await expect(settings).toContainText('PMax');
+  await expect(settings).toContainText('Alignment');
+  await expect(settings.locator('pre')).toHaveCount(0);
+  const metrics = await settings.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      left: rect.left,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight
+    };
+  });
+  expect(metrics.left).toBeGreaterThanOrEqual(8);
+  expect(metrics.top).toBeGreaterThanOrEqual(8);
+  expect(metrics.right).toBeLessThanOrEqual(metrics.viewportWidth - 8);
+  expect(metrics.bottom).toBeLessThanOrEqual(metrics.viewportHeight - 8);
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth);
+  expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight);
+  await page.getByRole('button', { name: 'Close settings' }).click();
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   // Result + viewer: a result thumb appears; click it; a DeepZoom tile renders.
   await expect(page.getByTestId('ws-result').first()).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('ws-result').first().click();

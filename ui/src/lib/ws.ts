@@ -11,6 +11,7 @@ interface JobEvent {
   status: string;
   percent: number;
   message: string;
+  params?: Record<string, unknown>;
 }
 
 export function connectJobs(): void {
@@ -41,7 +42,7 @@ export function connectJobs(): void {
       result: prev?.result ?? null,
       error: prev?.error ?? '',
       error_code: prev?.error_code ?? '',
-      params: prev?.params ?? {}
+      params: e.params ?? prev?.params ?? {}
     };
     appState.jobs[e.job_id] = merged;
   };

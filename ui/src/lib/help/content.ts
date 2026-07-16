@@ -690,9 +690,10 @@ export const docSections: DocSection[] = [
         <li><strong>Run again</strong> a finished stacking job with the exact
         same parameters — handy after tweaking input frames, or just to
         reproduce a result.</li>
-        <li>Expand <strong>Parameters</strong> to see the exact JSON parameters
-        that job ran with — useful if you're trying to remember what produced
-        a particular result, or reporting an issue.</li>
+        <li>Open <strong>Settings</strong> to see every option that job ran
+        with, arranged into readable overview, stacking, alignment and
+        selection groups — useful when reproducing a result or reporting an
+        issue.</li>
       </ul>
       <p>A failed job shows a plain-language error message rather than a raw
       crash trace, and stays visible in the queue (rather than disappearing)

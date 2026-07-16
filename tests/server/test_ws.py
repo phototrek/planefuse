@@ -18,10 +18,11 @@ def test_ws_streams_job_progress(tmp_path):
     with c.websocket_connect("/ws") as ws:
         jid = c.post(f"/api/projects/{pid}/jobs",
                      json={"type": "stack", "params": {"method": "pmax", "device": "cpu"}}).json()["id"]
-        seen_done = False
+        done_event = None
         for _ in range(200):
             evt = ws.receive_json()
             if evt.get("job_id") == jid and evt.get("status") == "done":
-                seen_done = True
+                done_event = evt
                 break
-        assert seen_done
+        assert done_event is not None
+        assert done_event["params"] == {"method": "pmax", "device": "cpu"}
