@@ -51,6 +51,33 @@ def test_align_stack_drop_misaligned_excludes_bad_frame(tmp_path):
         assert np.all(np.isfinite(report.matrices[i]))
 
 
+def test_flagged_pair_recovers_via_direct_reestimate(tmp_path, monkeypatch):
+    # Frame 0's consecutive link to frame 1 is bad, but frame 0 aligns fine
+    # directly against the reference (frame 1) — the direct re-estimate should
+    # recover it rather than leaving it flagged.
+    frames = [np.full((24, 24, 3), value, dtype=np.float32) for value in (0.0, 0.5, 1.0)]
+    src = ArrayFrameSource(frames)
+
+    def fake_estimate(frame_a, frame_b, _device, **_kwargs):
+        pair_values = (float(frame_a[0, 0, 0]), float(frame_b[0, 0, 0]))
+        # Only the consecutive (0 -> 1) direction is bad; the direct
+        # recovery re-estimate goes (ref=1 -> 0), the reverse order.
+        correlation = 0.2 if pair_values == (0.0, 0.5) else 0.99
+        return PairResult(np.eye(3), correlation, 1.0, 1.0)
+
+    monkeypatch.setattr("planefuse.align.pipeline.estimate_pair", fake_estimate)
+
+    report = align_stack(
+        src,
+        cache_dir=tmp_path,
+        device=get_device("cpu"),
+        params=AlignParams(reference=1, correlation_threshold=0.9),
+    )
+    assert report.recovered == {0}
+    assert report.flagged == set()
+    assert not report.dropped
+
+
 def test_unrecoverable_direct_alignment_stays_flagged_until_drop(tmp_path, monkeypatch):
     frames = [np.full((24, 24, 3), value, dtype=np.float32) for value in (0.0, 0.5, 1.0)]
     src = ArrayFrameSource(frames)

@@ -11,6 +11,17 @@ import numpy as np
 
 from planefuse.align.transforms import project_to_similarity
 
+# cv2.findTransformECC parallelizes its per-iteration reductions across
+# whatever thread count OpenCV sees at import time. That changes the
+# floating-point summation order of the Gauss-Newton solve, which can shift a
+# hard case's Hessian just enough to converge to a different local optimum on
+# an 8-core laptop than on a 4-core CI runner — a real, reproducible source of
+# machine-dependent alignment accuracy, not routine numerical noise. Pinning
+# to one thread makes ECC deterministic and gives every machine the same
+# (best-observed) convergence; proxy images are small enough that the
+# single-threaded cost is negligible next to full-resolution warping/fusion.
+cv2.setNumThreads(1)
+
 
 def _ecc_at_level(a: np.ndarray, b: np.ndarray, warp_init: np.ndarray,
                   iters: int, eps: float, motion: int) -> tuple[np.ndarray, float]:
