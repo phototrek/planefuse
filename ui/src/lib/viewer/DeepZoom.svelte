@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { api } from '$lib/api';
   import { appState } from '$lib/stores.svelte';
   import { isEditableTarget } from '$lib/shortcuts';
@@ -37,11 +37,24 @@
   let tx = $state(0);
   let ty = $state(0);
 
+  // Sync FROM an external `view` (e.g. the other pane in a synchronized
+  // compare view) without this effect also depending on our OWN scale/tx/ty.
+  // Reading them via `untrack` keeps the effect's only dependency on `view`
+  // itself — its reference only changes when a *parent* re-render passes a
+  // new one, never merely because a local zoom/pan/fit here just wrote to
+  // `scale`. Without `untrack`, this effect re-fires on every local write to
+  // `scale` too; since `emit()`'s round trip through `onmove` back to `view`
+  // is deferred a frame (requestAnimationFrame), it would read back the
+  // *stale* pre-change `view` and immediately revert the local change —
+  // every zoom, pan, or fit silently undone the instant it happens.
   $effect(() => {
     if (!view) return;
-    if (Math.abs(scale - view.scale) > 1e-6) scale = view.scale;
-    if (Math.abs(tx - view.tx) > 1e-6) tx = view.tx;
-    if (Math.abs(ty - view.ty) > 1e-6) ty = view.ty;
+    const next = view;
+    untrack(() => {
+      if (Math.abs(scale - next.scale) > 1e-6) scale = next.scale;
+      if (Math.abs(tx - next.tx) > 1e-6) tx = next.tx;
+      if (Math.abs(ty - next.ty) > 1e-6) ty = next.ty;
+    });
   });
 
   function fit() {

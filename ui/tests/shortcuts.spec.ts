@@ -21,6 +21,13 @@ test('workspace shortcuts step frames, zoom, show help, and respect text focus',
     await expect(page.getByTestId('ws-input').nth(1)).toHaveClass(/active/);
     await page.keyboard.press('z');
     await expect(page.getByText('100%').first()).toBeVisible();
+    // Regression guard: a stale-prop feedback loop in DeepZoom's view-sync
+    // effect used to revert this a moment later (the assertion above alone
+    // caught the fleeting true state and passed even with that bug present).
+    // Waiting past the deferred onmove round trip and re-asserting no longer
+    // gives that revert anywhere to hide.
+    await page.waitForTimeout(500);
+    await expect(page.getByText('100%').first()).toBeVisible();
     await page.keyboard.press('f');
 
     await page.keyboard.press('?');
