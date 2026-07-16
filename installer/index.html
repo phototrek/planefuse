@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0a0b0e">
+    <meta
+      name="description"
+      content="A calm, guided setup for PlaneFuse focus stacking on macOS and Windows."
+    >
+    <title>Install PlaneFuse</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script src="setup.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#setup">Skip to setup</a>
+
+    <header class="site-header">
+      <a class="brand" href="https://github.com/AdrienLF/planefuse" aria-label="PlaneFuse on GitHub">
+        <span class="brand-mark" aria-hidden="true">[</span>
+        <span>PLANE<span>:</span>FUSE</span>
+        <span class="brand-mark" aria-hidden="true">]</span>
+      </a>
+      <nav aria-label="Useful links">
+        <a href="https://github.com/AdrienLF/planefuse">Source</a>
+        <a href="https://github.com/AdrienLF/planefuse/blob/main/docs/INSTALL.md">Detailed help</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> Guided setup</p>
+          <h1>Your first focus stack is a few clicks away.</h1>
+          <p class="lede">
+            Choose your computer, follow four short steps, and PlaneFuse prepares
+            its own private working environment. No Node.js, Python, or uv setup.
+          </p>
+          <div class="trust-list" aria-label="PlaneFuse installation qualities">
+            <span>Local processing</span>
+            <span>No account</span>
+            <span>Open source</span>
+          </div>
+        </div>
+
+        <div class="focus-visual" aria-hidden="true">
+          <div class="frame frame-back">
+            <span class="focus-line line-one"></span>
+            <span class="focus-line line-two"></span>
+          </div>
+          <div class="frame frame-middle">
+            <span class="focus-line line-two"></span>
+            <span class="focus-line line-three"></span>
+          </div>
+          <div class="frame frame-front">
+            <span class="focus-line line-one"></span>
+            <span class="focus-line line-two"></span>
+            <span class="focus-line line-three"></span>
+            <span class="focus-point"></span>
+          </div>
+          <p>3 frames <span>→</span> 1 sharp result</p>
+        </div>
+      </section>
+
+      <section class="setup-card" id="setup" aria-labelledby="setup-title">
+        <div class="setup-topline">
+          <div>
+            <p class="section-label">Installation assistant</p>
+            <h2 id="setup-title">Let’s set up PlaneFuse</h2>
+          </div>
+          <div class="progress-copy" aria-live="polite">
+            <strong data-progress-label>0 of 4</strong>
+            <span>steps complete</span>
+          </div>
+        </div>
+
+        <div
+          class="progress-track"
+          role="progressbar"
+          aria-label="Installation progress"
+          aria-valuemin="0"
+          aria-valuemax="4"
+          aria-valuenow="0"
+          data-progress
+        >
+          <span></span>
+        </div>
+
+        <div class="platform-picker">
+          <p>Which computer are you using?</p>
+          <div class="platform-tabs" role="tablist" aria-label="Computer platform">
+            <button
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="panel-macos"
+              id="tab-macos"
+              data-platform-tab="macos"
+            >
+              <span class="platform-icon" aria-hidden="true">●</span>
+              macOS
+              <small>Apple silicon</small>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-windows"
+              id="tab-windows"
+              data-platform-tab="windows"
+            >
+              <span class="windows-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              Windows
+              <small>Windows 11 x64</small>
+            </button>
+          </div>
+          <p class="detected-note" data-detected-note aria-live="polite"></p>
+        </div>
+
+        <div
+          class="platform-panel is-active"
+          id="panel-macos"
+          role="tabpanel"
+          aria-labelledby="tab-macos"
+          data-platform-panel="macos"
+        >
+          <ol class="steps">
+            <li class="step" data-step="download">
+              <div class="step-number" aria-hidden="true"><span>1</span></div>
+              <div class="step-body">
+                <p class="step-kicker">Get the ready folder</p>
+                <h3>Download PlaneFuse for Mac</h3>
+                <p>
+                  This ZIP already contains the web interface and setup helper.
+                  It is not a frozen application.
+                </p>
+                <a
+                  class="button primary"
+                  href="https://github.com/AdrienLF/planefuse/releases/download/continuous/PlaneFuse-macOS-Apple-Silicon.zip"
+                  data-complete-on-click="download"
+                >
+                  <span aria-hidden="true">↓</span> Download for macOS
+                </a>
+                <p class="filename">Latest fully tested main build · PlaneFuse-macOS-Apple-Silicon.zip</p>
+              </div>
+            </li>
+
+            <li class="step" data-step="extract">
+              <div class="step-number" aria-hidden="true"><span>2</span></div>
+              <div class="step-body">
+                <p class="step-kicker">Open the folder</p>
+                <h3>Double-click the downloaded ZIP</h3>
+                <p>
+                  Finder creates a <strong>PlaneFuse</strong> folder beside it.
+                  Move that folder somewhere convenient, such as Applications or Documents.
+                </p>
+                <button class="button done-button" type="button" data-toggle-step="extract">
+                  <span class="check" aria-hidden="true">✓</span>
+                  <span data-button-label>Done — I can see the folder</span>
+                </button>
+              </div>
+            </li>
+
+            <li class="step" data-step="launch">
+              <div class="step-number" aria-hidden="true"><span>3</span></div>
+              <div class="step-body">
+                <p class="step-kicker">Start PlaneFuse</p>
+                <h3>Right-click the launcher, then choose Open</h3>
+                <p>
+                  Inside the folder, right-click <code>Launch PlaneFuse.command</code>
+                  and choose <strong>Open</strong>. macOS asks for confirmation only
+                  on the first launch.
+                </p>
+                <button class="button done-button" type="button" data-toggle-step="launch">
+                  <span class="check" aria-hidden="true">✓</span>
+                  <span data-button-label>I opened the launcher</span>
+                </button>
+              </div>
+            </li>
+
+            <li class="step" data-step="ready">
+              <div class="step-number" aria-hidden="true"><span>4</span></div>
+              <div class="step-body">
+                <p class="step-kicker">Let it prepare</p>
+                <h3>Keep the small Terminal window open</h3>
+                <p>
+                  The first launch downloads PlaneFuse’s private Python environment
+                  and processing libraries. This can take 5–20 minutes. Your browser
+                  opens automatically when it is ready; later launches are much faster.
+                </p>
+                <button class="button done-button" type="button" data-toggle-step="ready">
+                  <span class="check" aria-hidden="true">✓</span>
+                  <span data-button-label>PlaneFuse opened in my browser</span>
+                </button>
+              </div>
+            </li>
+          </ol>
+        </div>
+
+        <div
+          class="platform-panel"
+          id="panel-windows"
+          role="tabpanel"
+          aria-labelledby="tab-windows"
+          data-platform-panel="windows"
+        >
+          <ol class="steps">
+            <li class="step" data-step="download">
+              <div class="step-number" aria-hidden="true"><span>1</span></div>
+              <div class="step-body">
+                <p class="step-kicker">Get the ready folder</p>
+                <h3>Download PlaneFuse for Windows</h3>
+                <p>
+                  This ZIP already contains the web interface and setup helper.
+                  PlaneFuse chooses NVIDIA acceleration or CPU automatically.
+                </p>
+                <a
+                  class="button primary"
+                  href="https://github.com/AdrienLF/planefuse/releases/download/continuous/PlaneFuse-Windows-x64.zip"
+                  data-complete-on-click="download"
+                >
+                  <span aria-hidden="true">↓</span> Download for Windows
+                </a>
+                <p class="filename">Latest fully tested main build · PlaneFuse-Windows-x64.zip</p>
+              </div>
+            </li>
+
+            <li class="step" data-step="extract">
+              <div class="step-number" aria-hidden="true"><span>2</span></div>
+              <div class="step-body">
+                <p class="step-kicker">Open the folder</p>
+                <h3>Right-click the ZIP and choose Extract All</h3>
+                <p>
+                  Accept the suggested destination, then open the new
+                  <strong>PlaneFuse</strong> folder.
+                </p>
+                <button class="button done-button" type="button" data-toggle-step="extract">
+                  <span class="check" aria-hidden="true">✓</span>
+                  <span data-button-label>Done — I can see the folder</span>
+                </button>
+              </div>
+            </li>
+
+            <li class="step" data-step="launch">
+              <div class="step-number" aria-hidden="true"><span>3</span></div>
+              <div class="step-body">
+                <p class="step-kicker">Start PlaneFuse</p>
+                <h3>Double-click the PlaneFuse launcher</h3>
+                <p>
+                  Double-click <code>Launch PlaneFuse.bat</code>. If Windows asks,
+                  confirm that you want to run it. Keep the black setup window open.
+                </p>
+                <button class="button done-button" type="button" data-toggle-step="launch">
+                  <span class="check" aria-hidden="true">✓</span>
+                  <span data-button-label>I opened the launcher</span>
+                </button>
+              </div>
+            </li>
+
+            <li class="step" data-step="ready">
+              <div class="step-number" aria-hidden="true"><span>4</span></div>
+              <div class="step-body">
+                <p class="step-kicker">Let it prepare</p>
+                <h3>PlaneFuse finishes setup automatically</h3>
+                <p>
+                  The first launch downloads its private Python environment and
+                  processing libraries. Allow 5–20 minutes; NVIDIA systems may
+                  download more. Your browser opens when everything is ready.
+                </p>
+                <button class="button done-button" type="button" data-toggle-step="ready">
+                  <span class="check" aria-hidden="true">✓</span>
+                  <span data-button-label>PlaneFuse opened in my browser</span>
+                </button>
+              </div>
+            </li>
+          </ol>
+        </div>
+
+        <div class="finish-card" data-finish hidden>
+          <div class="finish-icon" aria-hidden="true">✓</div>
+          <div>
+            <p class="step-kicker">Setup complete</p>
+            <h3>You’re ready to stack.</h3>
+            <p>
+              Keep the PlaneFuse folder. Next time, use the same launcher and
+              the workspace should open in seconds.
+            </p>
+          </div>
+          <a class="button primary" href="http://127.0.0.1:8425">Open PlaneFuse</a>
+        </div>
+
+        <div class="setup-footer">
+          <p>
+            Stuck? Read the
+            <a href="https://github.com/AdrienLF/planefuse/blob/main/docs/TROUBLESHOOTING.md">
+              troubleshooting guide
+            </a>
+            or
+            <a href="https://github.com/AdrienLF/planefuse/issues/new">ask for help</a>.
+          </p>
+          <button type="button" class="reset-button" data-reset>Reset these steps</button>
+        </div>
+      </section>
+
+      <section class="why">
+        <div>
+          <p class="section-label">What happens on first launch?</p>
+          <h2>A normal folder, prepared automatically.</h2>
+        </div>
+        <div class="why-grid">
+          <article>
+            <span>01</span>
+            <h3>The interface is already built</h3>
+            <p>Node.js is only used when PlaneFuse’s release is prepared, never on your computer.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>The setup helper stays inside</h3>
+            <p>The included uv executable creates a private environment without changing your system.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>Your photos stay local</h3>
+            <p>The workspace runs on your computer at 127.0.0.1. No photos are uploaded.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>PlaneFuse is free, open-source software for photographers.</p>
+      <p>
+        Linux or advanced setup?
+        <a href="https://github.com/AdrienLF/planefuse/blob/main/docs/INSTALL.md">View all options</a>.
+      </p>
+    </footer>
+
+    <noscript>
+      <style>
+        .platform-panel { display: block; }
+        .platform-picker, .progress-track, .progress-copy, .done-button, .reset-button { display: none; }
+      </style>
+    </noscript>
+  </body>
+</html>

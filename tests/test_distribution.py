@@ -1,9 +1,13 @@
 import errno
+import io
 import json
 import os
+import re
 import select
 import subprocess
 import sys
+import tarfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -72,9 +76,13 @@ def test_launchers_use_locked_raw_install_and_reproducible_ui_build():
         assert "--frozen" in text
         assert "--extra raw" in text
         assert "Node.js 22+" in text
-    assert "exec uv run" in launchers[0].read_text()
+    assert 'exec "$UV_BIN" run' in launchers[0].read_text()
     assert "exit /b %errorlevel%" in launchers[1].read_text()
     assert "nvidia-smi" in launchers[2].read_text()
+    assert launchers[0].read_text().index("tools/uv") < launchers[0].read_text().index("command -v node")
+    for launcher in launchers[1:]:
+        text = launcher.read_text()
+        assert text.index(r"tools\uv.exe") < text.index("where node")
 
 
 def test_container_configuration_keeps_localhost_boundary_and_raw_support():
@@ -85,6 +93,112 @@ def test_container_configuration_keeps_localhost_boundary_and_raw_support():
     assert dockerfile.count('"raw"') >= 2
     assert '"127.0.0.1:8425:8425"' in compose
     assert ":/photos:ro" in compose
+
+
+def test_guided_installer_is_visual_platform_specific_and_release_backed():
+    page = (ROOT / "installer/index.html").read_text()
+    script = (ROOT / "installer/setup.js").read_text()
+    installer_favicon = (ROOT / "installer/favicon.svg").read_text()
+    app_favicon = (ROOT / "ui/static/favicon.svg").read_text()
+    app_shell = (ROOT / "ui/src/app.html").read_text()
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+    dependabot = (ROOT / ".github/dependabot.yml").read_text()
+
+    assert '<link rel="icon" href="favicon.svg" type="image/svg+xml">' in page
+    assert '<link rel="icon" href="/favicon.svg" type="image/svg+xml" />' in app_shell
+    assert installer_favicon == app_favicon
+    assert "<svg" in installer_favicon and "#ff8c42" in installer_favicon
+    assert 'data-platform-panel="macos"' in page
+    assert 'data-platform-panel="windows"' in page
+    assert page.count('data-step="') == 8
+    assert "PlaneFuse-macOS-Apple-Silicon.zip" in page
+    assert "PlaneFuse-Windows-x64.zip" in page
+    assert page.count("/releases/download/continuous/") == 2
+    assert 'role="progressbar"' in page
+    assert "navigator.userAgentData" in script
+    assert "window.localStorage" in script
+    assert "actions/deploy-pages" in workflow
+    assert "uv-aarch64-apple-darwin.tar.gz" in workflow
+    assert "uv-x86_64-pc-windows-msvc.zip" in workflow
+    assert "sha256sum -c" in workflow
+    assert "ACTIONLINT_SHA256" in workflow
+    assert "UV_MACOS_SHA256" in workflow
+    assert "UV_WINDOWS_SHA256" in workflow
+    assert "./actionlint -color" in workflow
+    assert "bash -n scripts/start-macos.sh" in workflow
+    assert "cmp release/PlaneFuse-macOS-Apple-Silicon.zip" in workflow
+    assert "runs-on: macos-15" in workflow
+    assert "runs-on: windows-2025" in workflow
+    assert workflow.count("python scripts/smoke_ready_bundle.py") == 2
+    assert "refs/heads/main" in workflow and "continuous" in workflow
+    assert "pyinstaller" not in workflow.lower()
+    actions = re.findall(r"uses:\s+\S+@([0-9a-f]{40})", workflow)
+    assert len(actions) >= 10
+    assert workflow.count("uses:") == len(actions)
+    assert {"github-actions", "uv", "npm", "docker"} <= set(
+        re.findall(r"package-ecosystem:\s+([a-z-]+)", dependabot)
+    )
+
+
+def test_ready_bundle_contains_compiled_ui_bundled_uv_and_executable_launcher(tmp_path):
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<title>PlaneFuse</title>")
+
+    uv_archive = tmp_path / "uv-aarch64-apple-darwin.tar.gz"
+    payload = b"#!/bin/sh\nexit 0\n"
+    with tarfile.open(uv_archive, "w:gz") as archive:
+        info = tarfile.TarInfo("uv-aarch64-apple-darwin/uv")
+        info.mode = 0o755
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
+
+    output = tmp_path / "PlaneFuse-macOS-Apple-Silicon.zip"
+    output_repeated = tmp_path / "PlaneFuse-macOS-Apple-Silicon-repeated.zip"
+    environment = {
+        **os.environ,
+        "GITHUB_SHA": "f" * 40,
+        "SOURCE_DATE_EPOCH": "1700000000",
+    }
+    command = [
+        sys.executable,
+        str(ROOT / "scripts/build_ready_bundle.py"),
+        "--platform",
+        "macos",
+        "--uv-archive",
+        str(uv_archive),
+        "--static-dir",
+        str(static),
+    ]
+    for destination in (output, output_repeated):
+        subprocess.run(
+            [*command, "--output", str(destination)],
+            cwd=ROOT,
+            env=environment,
+            check=True,
+        )
+
+    assert output.read_bytes() == output_repeated.read_bytes()
+
+    with zipfile.ZipFile(output) as bundle:
+        names = set(bundle.namelist())
+        identity = json.loads(bundle.read("PlaneFuse/RELEASE.json"))
+        assert "PlaneFuse/tools/uv" in names
+        assert "PlaneFuse/server/src/planefuse_server/static/index.html" in names
+        assert "PlaneFuse/Launch PlaneFuse.command" in names
+        assert "PlaneFuse/Launch PlaneFuse.bat" not in names
+        assert "PlaneFuse/ui/package.json" not in names
+        assert identity == {
+            "commit": "f" * 40,
+            "platform": "macos",
+            "source_date": "2023-11-14T22:13:20Z",
+            "uv": "0.11.28",
+            "version": "0.1.0",
+        }
+        uv_mode = bundle.getinfo("PlaneFuse/tools/uv").external_attr >> 16
+        launcher_mode = bundle.getinfo("PlaneFuse/Launch PlaneFuse.command").external_attr >> 16
+        assert uv_mode & 0o111
+        assert launcher_mode & 0o111
 
 
 def test_benchmark_records_runtime_versions():

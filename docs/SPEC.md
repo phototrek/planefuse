@@ -32,7 +32,7 @@ PlaneFuse merges a series of photographs taken at different focus distances ("a 
 | Tooling | **uv** for everything Python: a uv workspace (root `pyproject.toml` + committed `uv.lock`) containing both packages; `uv sync`, `uv run pytest`, `uv run ruff`, `uv run mypy`. Never pip/poetry. `npm` for the UI |
 | Server | FastAPI + uvicorn, WebSocket progress streaming |
 | Frontend | Svelte 5 + Vite + TypeScript, no heavyweight UI framework |
-| Packaging | Two Python packages with their own `pyproject.toml`, joined as a uv workspace: `planefuse` (engine) and `planefuse-server` (depends on engine, bundles the built UI). The engine CLI's `serve` subcommand lazily imports the server package and prints an install hint if absent. Docker images per §16 |
+| Packaging | Two Python packages with their own `pyproject.toml`, joined as a uv workspace: `planefuse` (engine) and `planefuse-server` (depends on engine, serves the built UI). Releases provide a visual HTML/JavaScript setup assistant and platform-specific ready folders containing the compiled UI plus the official uv executable; Docker images remain available per §16 |
 | Platforms | Windows 11, Linux, macOS on Apple silicon. NVIDIA GPU (CUDA 12.x) is the primary target; Apple M-series accelerates via MPS; everything must also run on CPU for machines without a GPU and for CI. |
 
 **Hard rules:**
@@ -348,6 +348,15 @@ Apple silicon (M3 Pro-class, MPS): indicative target within ~3× of the RTX 3080
 
 **uv (mandatory for all Python workflows):** the repo root is a uv workspace (`[tool.uv.workspace] members = ["engine", "server"]`) with one committed lock. All setup and execution use `--frozen`. The mutually exclusive `cpu` and `cu12x` extras select the Torch index; `raw` adds rawpy/LibRaw and ExifRead. Native CPU/MPS setup is `uv sync --frozen --extra cpu --extra raw`; CUDA 12.8 setup is `uv sync --frozen --extra cu12x --extra raw`. The optional `metadata` extra adds pyexiv2 but is not required by core RAW or metadata handling.
 
+**Guided setup:** GitHub Pages hosts a static HTML/JavaScript assistant that
+detects macOS or Windows, presents four accessible steps, and remembers local
+progress. Tagged releases build the UI once and attach ordinary ZIP folders for
+Apple silicon and Windows x64. Each folder contains the source, static UI, and
+a checksum-verified official uv binary. The launchers prefer that local binary;
+uv downloads a managed Python and the frozen dependency set on first launch.
+Node is needed only to prepare the release. There is no frozen executable,
+native installer project, signing/notarization pipeline, or system-wide install.
+
 **Docker:** one multi-stage `Dockerfile` with two final targets:
 
 - `cuda`: pinned Node 22 UI and uv stages → `nvidia/cuda:12.8.1-runtime-ubuntu24.04`, Python 3.12.11, and `uv sync --frozen --no-dev --extra cu12x --extra raw`. Run with NVIDIA container support.
@@ -355,4 +364,14 @@ Apple silicon (M3 Pro-class, MPS): indicative target within ~3× of the RTX 3080
 
 `docker-compose.yml` runs the cuda target with `gpus: all`, publishes the port as literally `127.0.0.1:8425:8425` (the bare `8425:8425` form would bind 0.0.0.0 and expose the auth-less server to the LAN, violating §9's localhost-only model), and mounts two volumes: the user's photo directory (read-only) and a projects/cache directory (read-write); the in-container server binds `0.0.0.0` (reachable only through the localhost-mapped port). Healthcheck: `GET /api/system`. **MPS is not reachable from containers** — Docker on macOS has no GPU passthrough; Apple-silicon users run natively via uv (documented in the README; the cpu image works on macOS but is the slow path).
 
-**CI (GitHub Actions):** on every push — frozen CPU+RAW sync (the CUDA wheel never downloads), Ruff, mypy, Python tests, UI lock/audit/typecheck/build/Playwright, documentation/API contract, Compose validation, and a CPU Docker build plus `/api/system` healthcheck. MPS and CUDA suites remain real-hardware release gates per §13.2.
+**CI (GitHub Actions):** every push and pull request verifies the frozen
+CPU+RAW graph (the CUDA wheel never downloads), Ruff, mypy, Python tests,
+dependency audits, UI typecheck/build/Playwright, documentation/API parity,
+Docker/Compose, and reproducible ready-folder assembly. Clean Apple-silicon
+macOS and Windows x64 runners then boot the exact ZIP artifacts with a
+uv-managed Python and validate the live API and UI. Every green `main` commit
+refreshes a rolling `continuous` release; `v*` tags publish only after all gates
+pass and receive provenance attestations when the repository is public. Third-
+party Actions are commit-pinned and Dependabot maintains Actions, uv, npm, and
+Docker inputs. MPS and CUDA algorithm suites remain real-hardware release gates
+per §13.2.

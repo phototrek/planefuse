@@ -2,55 +2,127 @@ name: CI
 
 on:
   push:
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
-jobs:
-  lint-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
+env:
+  ACTIONLINT_VERSION: "1.7.12"
+  ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+  NODE_VERSION: "22.23.1"
+  PYTHON_VERSION: "3.12.11"
+  UV_VERSION: "0.11.28"
+  UV_MACOS_SHA256: "33540eb7c883ab857eff79bd5ac2aa31fe27b595abecb4a9c003a2c998447232"
+  UV_WINDOWS_SHA256: "0a23463216d09c6a72ff80ef5dc5a795f07dc1575cb84d24596c2f124a441b7b"
 
-      - uses: actions/setup-python@v6
+jobs:
+  python:
+    name: Python quality, tests, and audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Lint workflows and shell launcher syntax
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSLO \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
+          printf '%s  %s\n' "$ACTIONLINT_SHA256" "$archive" | sha256sum -c -
+          tar -xzf "$archive" actionlint
+          ./actionlint -color
+          bash -n scripts/start-macos.sh
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.3.2
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
-          version: "0.11.28"
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
 
-      - name: Sync (CPU torch only — the CUDA wheel must never download here)
+      - name: Verify frozen dependency graph
+        run: uv lock --check
+
+      - name: Sync CPU and RAW dependencies
         run: uv sync --frozen --extra cpu --extra raw
 
       - name: Ruff
         run: uv run --frozen --extra cpu --extra raw ruff check .
 
       - name: Mypy
-        run: uv run --frozen --extra cpu --extra raw mypy engine/src server/src
+        run: >-
+          uv run --frozen --extra cpu --extra raw mypy
+          engine/src server/src
+          scripts/build_ready_bundle.py scripts/smoke_ready_bundle.py
 
-      - name: Pytest (CPU device)
+      - name: Pytest
         env:
           PLANEFUSE_DEVICE: cpu
-        run: uv run --frozen --extra cpu --extra raw pytest -q
+        run: uv run --frozen --extra cpu --extra raw pytest -q --junitxml=reports/pytest.xml
 
       - name: Python dependency audit
-        run: uvx pip-audit --path .venv/lib/python3.12/site-packages
+        run: uvx --from pip-audit==2.10.1 pip-audit --path .venv/lib/python3.12/site-packages
 
-      - uses: actions/setup-node@v6
+      - name: Documentation and API contract
+        run: uv run --frozen --extra cpu --extra raw python scripts/check_docs.py
+
+      - name: Upload Python test report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          node-version: 22
+          name: pytest-report
+          path: reports/pytest.xml
+          if-no-files-found: ignore
+          retention-days: 14
+
+  ui:
+    name: UI typecheck, audit, build, and browser tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Sync browser-test backend
+        run: uv sync --frozen --extra cpu --extra raw
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      - name: UI install, audit, typecheck, and build
+      - name: Install and audit UI dependencies
         working-directory: ui
         run: |
           npm ci --no-fund --fetch-retries=5 --fetch-retry-maxtimeout=120000
           npm audit --audit-level=high
+
+      - name: Typecheck and build production UI
+        working-directory: ui
+        run: |
           npm run check
           npm run build
 
@@ -58,31 +130,274 @@ jobs:
         working-directory: ui
         run: npx playwright install --with-deps chromium
 
-      - name: Browser workflow (CPU)
+      - name: Browser workflows
         working-directory: ui
         run: npm run test:e2e
 
-      - name: Documentation contract
-        run: uv run --frozen --extra cpu --extra raw python scripts/check_docs.py
+      - name: Upload compiled UI
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: compiled-ui
+          path: server/src/planefuse_server/static
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: playwright-report
+          path: |
+            ui/playwright-report
+            ui/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  ready-folders:
+    name: Reproducible ready-folder ZIPs
+    needs: ui
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download tested UI
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: compiled-ui
+          path: server/src/planefuse_server/static
+
+      - name: Download and verify pinned uv binaries
+        run: |
+          mkdir -p build/uv release release-repro
+          base="https://github.com/astral-sh/uv/releases/download/$UV_VERSION"
+          for file in uv-aarch64-apple-darwin.tar.gz uv-x86_64-pc-windows-msvc.zip; do
+            curl --proto '=https' --tlsv1.2 -fsSL "$base/$file" -o "build/uv/$file"
+          done
+          printf '%s  %s\n' "$UV_MACOS_SHA256" \
+            build/uv/uv-aarch64-apple-darwin.tar.gz > build/uv/SHA256SUMS
+          printf '%s  %s\n' "$UV_WINDOWS_SHA256" \
+            build/uv/uv-x86_64-pc-windows-msvc.zip >> build/uv/SHA256SUMS
+          sha256sum -c build/uv/SHA256SUMS
+
+      - name: Assemble ready folders twice
+        run: |
+          for output in release release-repro; do
+            python scripts/build_ready_bundle.py \
+              --platform macos \
+              --uv-archive build/uv/uv-aarch64-apple-darwin.tar.gz \
+              --output "$output/PlaneFuse-macOS-Apple-Silicon.zip"
+            python scripts/build_ready_bundle.py \
+              --platform windows \
+              --uv-archive build/uv/uv-x86_64-pc-windows-msvc.zip \
+              --output "$output/PlaneFuse-Windows-x64.zip"
+          done
+
+      - name: Verify reproducibility, contents, and checksums
+        run: |
+          cmp release/PlaneFuse-macOS-Apple-Silicon.zip release-repro/PlaneFuse-macOS-Apple-Silicon.zip
+          cmp release/PlaneFuse-Windows-x64.zip release-repro/PlaneFuse-Windows-x64.zip
+          unzip -tq release/PlaneFuse-macOS-Apple-Silicon.zip
+          unzip -tq release/PlaneFuse-Windows-x64.zip
+          (cd release && sha256sum PlaneFuse-*.zip > SHA256SUMS)
+
+      - name: Upload ready folders from every run
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: PlaneFuse-ready-folders
+          path: |
+            release/*.zip
+            release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  macos-ready-smoke:
+    name: macOS ready-folder first-launch smoke
+    needs: ready-folders
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore uv download cache
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: PlaneFuse-ready-folders
+          path: release
+
+      - name: Extract and boot the ready folder
+        run: |
+          ditto -x -k release/PlaneFuse-macOS-Apple-Silicon.zip smoke
+          python scripts/smoke_ready_bundle.py --bundle smoke/PlaneFuse --timeout 900
+
+  windows-ready-smoke:
+    name: Windows ready-folder first-launch smoke
+    needs: ready-folders
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore uv download cache
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: PlaneFuse-ready-folders
+          path: release
+
+      - name: Extract and boot the ready folder
+        shell: pwsh
+        run: |
+          Expand-Archive release/PlaneFuse-Windows-x64.zip -DestinationPath smoke
+          python scripts/smoke_ready_bundle.py --bundle smoke/PlaneFuse --timeout 900
 
   docker-smoke:
-    runs-on: ubuntu-latest
+    name: Docker build and health
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Build CPU image
         run: docker build --target cpu -t planefuse:cpu .
 
-      - name: Validate CUDA Compose security/configuration
+      - name: Validate CUDA Compose security and configuration
         run: docker compose config --quiet
 
-      - name: Run and health-check /api/system
+      - name: Run and health-check the CPU image
         run: |
+          trap 'docker rm -f fs >/dev/null 2>&1 || true' EXIT
           docker run -d --name fs -p 127.0.0.1:8425:8425 planefuse:cpu
-          for i in $(seq 1 30); do
+          for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8425/api/system >/dev/null; then
-              echo "healthy"; docker rm -f fs; exit 0
+              exit 0
             fi
             sleep 2
           done
-          echo "server never became healthy"; docker logs fs; docker rm -f fs; exit 1
+          docker logs fs
+          exit 1
+
+  publish-continuous:
+    name: Refresh continuously tested release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [python, ui, ready-folders, macos-ready-smoke, windows-ready-smoke, docker-smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: PlaneFuse-ready-folders
+          path: release
+
+      - name: Point the continuous tag at this green commit
+        run: |
+          git tag -f continuous "$GITHUB_SHA"
+          git push origin +refs/tags/continuous:refs/tags/continuous
+
+      - name: Refresh rolling release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Built from the latest fully tested main commit: $GITHUB_SHA"
+          if gh release view continuous >/dev/null 2>&1; then
+            gh release edit continuous --title "PlaneFuse — latest tested build" --notes "$notes" --prerelease
+          else
+            gh release create continuous --title "PlaneFuse — latest tested build" --notes "$notes" --prerelease
+          fi
+          gh release upload continuous release/*.zip release/SHA256SUMS --clobber
+
+  publish-version:
+    name: Publish versioned release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [python, ui, ready-folders, macos-ready-smoke, windows-ready-smoke, docker-smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: PlaneFuse-ready-folders
+          path: release
+
+      - name: Verify tag matches project version
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          test "$GITHUB_REF_NAME" = "v$version"
+
+      - name: Attest release provenance when supported
+        if: github.event.repository.private == false
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4
+        with:
+          subject-path: |
+            release/*.zip
+            release/SHA256SUMS
+
+      - name: Publish immutable version assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "PlaneFuse $GITHUB_REF_NAME"
+          gh release upload "$GITHUB_REF_NAME" release/*.zip release/SHA256SUMS --clobber
+
+  deploy-setup-page:
+    name: Deploy guided setup page
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.event.repository.private == false
+    needs: [python, ui, ready-folders, macos-ready-smoke, windows-ready-smoke, docker-smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Upload setup page
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: installer
+
+      - name: Publish setup page
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

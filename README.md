@@ -75,26 +75,35 @@ below.
 
 ## Installation (macOS, Windows, Linux & Docker)
 
-Every install path serves the app at **`http://127.0.0.1:8425`**, opened
-automatically in your browser. Nothing is installed system-wide beyond the
-project folder itself.
+PlaneFuse runs entirely on your computer and opens its workspace automatically
+in your browser at **`http://127.0.0.1:8425`**. Your photos are never uploaded.
 
-### One-click launchers (recommended)
+### Guided setup (recommended)
 
-No terminal required beyond the very first run, which needs
-[uv 0.11.28+](https://docs.astral.sh/uv/) and Node.js 22+ already on your
-machine (the launcher checks and tells you clearly if either is missing).
+Open the **[PlaneFuse installation assistant](https://adrienlf.github.io/planefuse/)**.
+It detects macOS or Windows and walks through four visual steps: download,
+extract, launch, and wait for the workspace to open.
 
-- **macOS:** double-click `Launch PlaneFuse.command`.
-- **Windows:** double-click `Launch PlaneFuse.bat` — it prefers an NVIDIA GPU
-  and falls back to CPU automatically.
+- **Apple-silicon macOS 14+:** download the ready folder, extract it, then
+  right-click `Launch PlaneFuse.command` and choose **Open**.
+- **Windows 11 x64:** download the ready folder, extract it, then double-click
+  `Launch PlaneFuse.bat`. A working NVIDIA GPU is selected automatically;
+  otherwise PlaneFuse uses the CPU.
 
-The first launch does a locked dependency install and builds the web
-interface, which takes a few minutes; every launch after that starts in
-seconds. Keep the project folder where it is — the launchers delegate to the
-scripts in `scripts/`.
+The ready folders contain the compiled interface and a small, official uv
+executable. On first launch uv automatically downloads a private Python
+environment and PlaneFuse's locked processing libraries. Photographers do not
+install Node.js, uv, or Python themselves; Node.js is only used when the ready
+folders are prepared for a release. The first launch can take 5–20 minutes and
+later launches are much faster. The assistant downloads the latest `main`
+build that passed Python, UI, Docker, macOS, Windows, and packaged-app smoke
+tests; versioned releases remain available on GitHub.
 
-### Manual quick start
+### From source (developers)
+
+The repository still includes `Launch PlaneFuse.command` and
+`Launch PlaneFuse.bat`. A plain source checkout requires uv; Node.js is only
+required when the compiled interface is absent.
 
 ```bash
 uv sync --frozen --extra cpu --extra raw
@@ -181,6 +190,7 @@ provenance/verification guarantees: [`docs/RAW_DNG_CAPTURE_ONE.md`](docs/RAW_DNG
 - [API](docs/API.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Performance](docs/PERFORMANCE.md)
+- [Continuous integration and releases](docs/CI.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Implementation specification](docs/SPEC.md)
 
@@ -209,12 +219,10 @@ provenance/verification guarantees: [`docs/RAW_DNG_CAPTURE_ONE.md`](docs/RAW_DNG
 - **No cloud processing, accounts, or mobile app.** Everything runs on your
   machine and binds to `127.0.0.1` only — your photos never leave your
   computer, and there's nothing to log into.
-- **No signed native installer (`.exe`/`.dmg`) yet.** PlaneFuse is a local
-  web app served by a small Python backend, launched by a one-click script
-  rather than a conventional installer. The trade-off buys a single
-  cross-platform codebase and a fully inspectable stack (Python, Svelte, no
-  binary blobs) at the cost of a slightly less "double-click and go" first
-  run than a packaged desktop app.
+- **No frozen native installer.** PlaneFuse ships as an inspectable ready
+  folder with a visual setup guide instead of a `.dmg`/`.exe` application
+  bundle. The first launch downloads its locked Python environment, while later
+  launches reuse it.
 
 ## PlaneFuse vs Helicon Focus vs Zerene Stacker vs ShineStacker
 
@@ -226,7 +234,7 @@ vendor's site for the latest.
 |---|---|---|---|---|
 | **License / price** | Free, open source (MIT) | Commercial — $89 Personal, higher Professional tier | Commercial — tiered, roughly $30–65/yr or $115–240 lifetime by tier | Free, open source (LGPL-3.0) |
 | **Source code** | Fully open | Closed | Closed | Fully open |
-| **Interface** | Local web app (browser UI, one-click launchers) | Native desktop app (Java) | Native desktop app | Native desktop app (Qt6) |
+| **Interface** | Local browser workspace with guided ready-folder setup | Native desktop app (Java) | Native desktop app | Native desktop app (Qt6) |
 | **Platforms** | macOS, Windows, Linux (Docker) | Windows, macOS (universal), Linux | Windows, macOS | Windows, macOS, Linux |
 | **Stacking methods** | PMax, DMap, Weighted average, Slab (hierarchical) | PMax, DMap | Method A (weighted avg), B (depth map), C (pyramid) | Configurable alignment/normalize/blend pipeline |
 | **GPU acceleration** | Yes — CUDA and Apple MPS, with CPU fallback | Not published | Not published | Not published |

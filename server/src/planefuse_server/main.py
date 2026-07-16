@@ -144,7 +144,8 @@ def run(host: str | None = None, port: int | None = None) -> None:  # pragma: no
     port = _find_free_port(host, port)
     url = f"http://{host}:{port}"
     log.info("PlaneFuse server on %s", url)
-    if host in ("127.0.0.1", "localhost"):  # don't pop a browser in a headless container
+    no_browser = os.environ.get("PLANEFUSE_NO_BROWSER", "").lower() in {"1", "true", "yes"}
+    if host in ("127.0.0.1", "localhost") and not no_browser:
         try:
             webbrowser.open(url)
         except Exception:  # noqa: BLE001
