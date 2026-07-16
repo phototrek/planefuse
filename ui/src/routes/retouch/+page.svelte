@@ -223,6 +223,7 @@
         disabled={busy}
         onclick={flatten}
       >Flatten</button>
+      <a class="help-link" href="/help#retouch-tools" title="Retouch documentation">Help</a>
     </header>
 
     {#if error}<p class="error mono">{error}</p>{/if}
@@ -292,6 +293,8 @@
   .modes button:last-child { border-radius: 0 var(--radius) var(--radius) 0; margin-left: -1px; }
   button.active { color: #1a0d04; background: var(--accent); border-color: var(--accent); }
   .name { width: 150px; }
+  .help-link { margin-left: 4px; font-size: 12px; color: var(--text-faint); padding: 6px 4px; }
+  .help-link:hover { color: var(--accent-bright); }
   .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px 1fr; gap: 12px; }
   .sources { padding: 14px; display: flex; flex-direction: column; gap: 10px; overflow: auto; }
   .source { padding: 0; overflow: hidden; text-align: left; }

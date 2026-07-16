@@ -133,6 +133,7 @@
     <span><kbd>F</kbd> Fit</span><span><kbd>Z</kbd> 100%</span>
     <span><kbd>←</kbd><kbd>→</kbd> Step frames</span><span><kbd>\</kbd> Before / after</span>
     <span><kbd>Esc</kbd> Exit compare</span><span><kbd>?</kbd> Close help</span>
+    <a class="full-docs" href="/help">Full documentation →</a>
   </aside>
 {/if}
 
@@ -181,4 +182,5 @@
   }
   .shortcut-help { position: fixed; right: 16px; top: 70px; z-index: 100; display: grid; grid-template-columns: auto auto; gap: 8px 14px; padding: 12px; font-size: 11px; box-shadow: var(--shadow); }
   .shortcut-help strong { grid-column: 1 / -1; }
+  .full-docs { grid-column: 1 / -1; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--accent-bright); font-size: 11px; }
 </style>

@@ -60,6 +60,8 @@
         <span class="dot off"></span><span class="faint">connecting…</span>
       {/if}
     </div>
+
+    <a class="help-link" href="/help" title="Documentation and troubleshooting">Help</a>
   </header>
 
   <main class="main">
@@ -72,11 +74,23 @@
 
   .topbar {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto 1fr auto auto;
     align-items: center;
     border-bottom: 1px solid var(--line);
     background: linear-gradient(180deg, var(--panel-2), var(--panel));
   }
+
+  .help-link {
+    padding: 0 18px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-dim);
+    border-left: 1px solid var(--line);
+  }
+  .help-link:hover { color: var(--accent-bright); }
 
   .main { overflow: hidden; }   /* workspace manages its own scrolling */
 
