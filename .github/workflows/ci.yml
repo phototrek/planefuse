@@ -225,7 +225,7 @@ jobs:
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.12"
 
       - name: Restore uv download cache
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
@@ -253,7 +253,7 @@ jobs:
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.12"
 
       - name: Restore uv download cache
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
@@ -293,6 +293,7 @@ jobs:
             if curl -fsS http://127.0.0.1:8425/api/system >/dev/null; then
               exit 0
             fi
+            echo "health check attempt $attempt/30 failed"
             sleep 2
           done
           docker logs fs
