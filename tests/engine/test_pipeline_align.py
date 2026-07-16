@@ -1,9 +1,9 @@
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from focusstack.io import save_image
-from focusstack.pipeline import stack_frames
-from focusstack.align import AlignParams
+from planefuse.io import save_image
+from planefuse.pipeline import stack_frames
+from planefuse.align import AlignParams
 from tests.synthetic.generate import generate_stack
 
 

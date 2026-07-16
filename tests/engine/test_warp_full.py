@@ -1,8 +1,8 @@
 import numpy as np
 
-from focusstack.backend import get_device, ops  # noqa: F401
-from focusstack.align.warp import warp_full
-from focusstack.align.transforms import translation_matrix
+from planefuse.backend import get_device, ops  # noqa: F401
+from planefuse.align.warp import warp_full
+from planefuse.align.transforms import translation_matrix
 
 
 def test_warp_full_identity_returns_frame_and_full_mask():

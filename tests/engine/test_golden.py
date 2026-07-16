@@ -2,8 +2,8 @@ from pathlib import Path
 
 import numpy as np
 
-from focusstack.io import ProcessingDomain, load_raw, save_image, save_linear_dng
-from focusstack.pipeline import stack_frames
+from planefuse.io import ProcessingDomain, load_raw, save_image, save_linear_dng
+from planefuse.pipeline import stack_frames
 from tests.engine.test_raw_loader import write_test_raw
 
 

@@ -3,9 +3,9 @@ import time
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.errors import DiskSpaceError
-from focusstack.io import save_image
-from focusstack_server.main import create_app
+from planefuse.errors import DiskSpaceError
+from planefuse.io import save_image
+from planefuse_server.main import create_app
 
 
 def _wait(client: TestClient, job_id: str, timeout: float = 10.0) -> dict:
@@ -44,7 +44,7 @@ def test_sync_engine_failure_uses_same_structured_error_contract(tmp_path, monke
     def fail_disk_space(*_args, **_kwargs):
         raise DiskSpaceError("disk is full")
 
-    monkeypatch.setattr("focusstack_server.projects.ProjectStore.create", fail_disk_space)
+    monkeypatch.setattr("planefuse_server.projects.ProjectStore.create", fail_disk_space)
     response = TestClient(app).post("/api/projects", json={"name": "P"})
     assert response.status_code == 507
     assert response.json() == {

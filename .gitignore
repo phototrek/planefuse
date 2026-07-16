@@ -12,6 +12,6 @@ ui/.svelte-kit/
 ui/test-results/
 ui/playwright-report/
 # Built UI bundle (produced by `npm run build` in ui/)
-server/src/focusstack_server/static/
+server/src/planefuse_server/static/
 # Stray project store written when the server runs from the repo root
 /project.json

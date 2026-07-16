@@ -1,9 +1,9 @@
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from focusstack.backend import get_device
-from focusstack.stack import ArrayFrameSource, get_algorithm
-from focusstack.tiles import estimate_stack_bytes, plan_tiles, stack_tiled
+from planefuse.backend import get_device
+from planefuse.stack import ArrayFrameSource, get_algorithm
+from planefuse.tiles import estimate_stack_bytes, plan_tiles, stack_tiled
 from tests.synthetic.generate import generate_stack
 
 

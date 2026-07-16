@@ -1,6 +1,6 @@
 import numpy as np
 
-from focusstack.retouch import RetouchSession, Stroke
+from planefuse.retouch import RetouchSession, Stroke
 
 
 def _session():

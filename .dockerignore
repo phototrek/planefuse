@@ -10,7 +10,7 @@ ui/.svelte-kit
 ui/dist
 ui/test-results
 ui/playwright-report
-server/src/focusstack_server/static
+server/src/planefuse_server/static
 .test-tmp
 cache
 project.json

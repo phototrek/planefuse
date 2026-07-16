@@ -5,9 +5,9 @@ import pytest
 import tifffile
 from PIL import Image
 
-from focusstack.errors import ValidationError
-from focusstack.io.loader import load_image, validate_stack
-from focusstack.io.metadata import ProcessingDomain
+from planefuse.errors import ValidationError
+from planefuse.io.loader import load_image, validate_stack
+from planefuse.io.metadata import ProcessingDomain
 from tests.engine.test_raw_loader import write_test_raw
 
 
@@ -56,7 +56,7 @@ def test_rendered_frame_carries_exif_xmp_and_normalizes_orientation(tmp_path):
     pixels = np.zeros((2, 3, 3), dtype=np.uint8)
     pixels[0, 0] = (255, 0, 0)
     exif = Image.Exif()
-    exif[271] = "FocusStack Camera Co"
+    exif[271] = "PlaneFuse Camera Co"
     exif[272] = "SameCam Pro"
     exif[274] = 6
     xmp = b'<x:xmpmeta xmlns:x="adobe:ns:meta/"><label>source</label></x:xmpmeta>'
@@ -67,7 +67,7 @@ def test_rendered_frame_carries_exif_xmp_and_normalizes_orientation(tmp_path):
 
     assert frame.domain is ProcessingDomain.RENDERED_RGB
     assert frame.pixels.shape == (3, 2, 3)
-    assert frame.metadata.camera_make == "FocusStack Camera Co"
+    assert frame.metadata.camera_make == "PlaneFuse Camera Co"
     assert frame.metadata.camera_model == "SameCam Pro"
     assert frame.metadata.source_orientation == 6
     assert frame.metadata.orientation == 1
@@ -109,7 +109,7 @@ def test_validate_same_camera_raw_stack_reports_domain_and_decoder(tmp_path):
     report = validate_stack(paths)
     assert report.ok
     assert report.domain == ProcessingDomain.SCENE_LINEAR_CAMERA_RGB.value
-    assert report.camera == "FocusStack Camera Co SameCam Pro"
+    assert report.camera == "PlaneFuse Camera Co SameCam Pro"
     assert report.decoder["demosaic"] == "AHD"
 
 

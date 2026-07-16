@@ -1,14 +1,14 @@
-# FocusStack — Professional GPU-Accelerated Focus Stacking Software
+# PlaneFuse — Professional GPU-Accelerated Focus Stacking Software
 
 **Specification v1.1 — 2026-07-15**
 
-This is the implemented product contract for FocusStack. The original milestone order is retained as project history; current operational details are linked from the root README and the API, architecture, installation, user, and RAW workflow guides.
+This is the implemented product contract for PlaneFuse. The original milestone order is retained as project history; current operational details are linked from the root README and the API, architecture, installation, user, and RAW workflow guides.
 
 ---
 
 ## 1. Product overview
 
-FocusStack merges a series of photographs taken at different focus distances ("a stack") into a single image that is sharp everywhere. Target users are professional macro, product, and landscape photographers who today use Zerene Stacker or Helicon Focus.
+PlaneFuse merges a series of photographs taken at different focus distances ("a stack") into a single image that is sharp everywhere. Target users are professional macro, product, and landscape photographers who today use Zerene Stacker or Helicon Focus.
 
 **Core promises:**
 
@@ -32,12 +32,12 @@ FocusStack merges a series of photographs taken at different focus distances ("a
 | Tooling | **uv** for everything Python: a uv workspace (root `pyproject.toml` + committed `uv.lock`) containing both packages; `uv sync`, `uv run pytest`, `uv run ruff`, `uv run mypy`. Never pip/poetry. `npm` for the UI |
 | Server | FastAPI + uvicorn, WebSocket progress streaming |
 | Frontend | Svelte 5 + Vite + TypeScript, no heavyweight UI framework |
-| Packaging | Two Python packages with their own `pyproject.toml`, joined as a uv workspace: `focusstack` (engine) and `focusstack-server` (depends on engine, bundles the built UI). The engine CLI's `serve` subcommand lazily imports the server package and prints an install hint if absent. Docker images per §16 |
+| Packaging | Two Python packages with their own `pyproject.toml`, joined as a uv workspace: `planefuse` (engine) and `planefuse-server` (depends on engine, bundles the built UI). The engine CLI's `serve` subcommand lazily imports the server package and prints an install hint if absent. Docker images per §16 |
 | Platforms | Windows 11, Linux, macOS on Apple silicon. NVIDIA GPU (CUDA 12.x) is the primary target; Apple M-series accelerates via MPS; everything must also run on CPU for machines without a GPU and for CI. |
 
 **Hard rules:**
 
-- The engine package (`focusstack.engine`) must have **zero imports from server or UI code**. It is importable and fully usable from a plain Python script.
+- The engine package (`planefuse.engine`) must have **zero imports from server or UI code**. It is importable and fully usable from a plain Python script.
 - Every algorithm runs identically (within float tolerance) on every device (CUDA, MPS, CPU). The device is selected at runtime, never at install time.
 - Rendered-image math is float32 in source gamma. RAW fusion is float32 scene-linear camera RGB; only normalized neutral proxies may be used for alignment and focus measurements. Integer math exists only at I/O boundaries.
 - Processing domains never mix. RAW stacks require one honest camera/sensor/CFA/calibration contract.
@@ -52,8 +52,8 @@ focus-stacker/
 ├── docs/
 │   └── SPEC.md                  # this document
 ├── engine/
-│   ├── pyproject.toml           # package: focusstack
-│   └── src/focusstack/
+│   ├── pyproject.toml           # package: planefuse
+│   └── src/planefuse/
 │       ├── backend/             # device abstraction over torch, memory budgeting
 │       │   ├── __init__.py      # get_device(), Device info dataclass
 │       │   ├── ops.py           # all image ops, device-agnostic torch (the one true implementation)
@@ -68,10 +68,10 @@ focus-stacker/
 │       ├── pipeline.py          # orchestrates load→align→select→stack→post
 │       ├── tiles.py             # tiled processing + viewer tile pyramid
 │       ├── project.py           # project file model (JSON on disk)
-│       └── cli.py               # `focusstack` CLI entry point
+│       └── cli.py               # `planefuse` CLI entry point
 ├── server/
-│   ├── pyproject.toml           # package: focusstack-server (depends on focusstack)
-│   └── src/focusstack_server/
+│   ├── pyproject.toml           # package: planefuse-server (depends on planefuse)
+│   └── src/planefuse_server/
 │       ├── main.py              # FastAPI app factory, static UI serving
 │       ├── jobs.py              # job queue, cancellation, progress events
 │       ├── api/                 # routers: projects, frames, jobs, viewer, retouch, export, system
@@ -218,7 +218,7 @@ For deep stacks: split the ordered frames into overlapping sub-stacks ("slabs") 
 
 ## 9. Server and API
 
-Single-user local app. `focusstack serve` starts uvicorn on `127.0.0.1:8425` (configurable) and opens the browser. The server only binds localhost; no auth.
+Single-user local app. `planefuse serve` starts uvicorn on `127.0.0.1:8425` (configurable) and opens the browser. The server only binds localhost; no auth.
 
 **Job model:** one worker thread executes jobs sequentially (GPU is the bottleneck); queue is inspectable and reorderable. Jobs are cancellable between progress steps (the engine checks a `cancel_event` at each frame/stage boundary). Every job emits typed progress events `{job_id, stage, frame_index?, percent, message, level}` over WebSocket `/ws`.
 
@@ -312,7 +312,7 @@ Server-side compositing; the UI is a thin client sending strokes and re-fetching
 
 ## 14. Milestones (implement strictly in order)
 
-**M1 — Engine core + PMax + CLI.** uv workspace, device abstraction, I/O, synthetic generator, PMax (streaming fold, device-agnostic), tiling, `focusstack stack DIR -o out.tif --method pmax [--device cuda|mps|cpu]`. ✓ when: 13.2 parity + PMax-quality + tiled tests pass; CLI stacks a real pre-aligned stack.
+**M1 — Engine core + PMax + CLI.** uv workspace, device abstraction, I/O, synthetic generator, PMax (streaming fold, device-agnostic), tiling, `planefuse stack DIR -o out.tif --method pmax [--device cuda|mps|cpu]`. ✓ when: 13.2 parity + PMax-quality + tiled tests pass; CLI stacks a real pre-aligned stack.
 
 **M2 — Alignment.** Full §6 pipeline, cache of aligned frames, `--align` CLI flags. ✓ when: alignment accuracy tests pass; a real handheld stack visibly aligns (difference preview).
 

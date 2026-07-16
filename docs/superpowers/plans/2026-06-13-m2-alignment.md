@@ -1,4 +1,4 @@
-# FocusStack M2 — Alignment Implementation Plan
+# PlaneFuse M2 — Alignment Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers-extended-cc:subagent-driven-development (if subagents available) or superpowers-extended-cc:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -67,7 +67,7 @@ git commit -m "build: add opencv-python-headless for ECC alignment refinement"
 Add the device-agnostic primitives alignment needs: RGB→luminance, affine warp (output→input convention), FFT pair with the §4 MPS CPU round-trip, a 2-D Hann window, phase correlation, and log-polar remap. All are parity-tested CPU-vs-accelerator.
 
 **Files:**
-- Modify: `engine/src/focusstack/backend/ops.py` (append new functions)
+- Modify: `engine/src/planefuse/backend/ops.py` (append new functions)
 - Test: `tests/engine/test_align_ops.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -79,7 +79,7 @@ import numpy as np
 import pytest
 import torch
 
-from focusstack.backend import get_device, ops
+from planefuse.backend import get_device, ops
 
 
 def _rand_img(c=3, h=64, w=80, seed=0):
@@ -183,9 +183,9 @@ def test_phase_correlation_parity(accel_device):
 - [ ] **Step 2: Run tests to verify failure**
 
 Run: `uv run pytest tests/engine/test_align_ops.py -v`
-Expected: FAIL — `AttributeError: module 'focusstack.backend.ops' has no attribute 'rgb_to_luminance'`.
+Expected: FAIL — `AttributeError: module 'planefuse.backend.ops' has no attribute 'rgb_to_luminance'`.
 
-- [ ] **Step 3: Append the implementation to `engine/src/focusstack/backend/ops.py`**
+- [ ] **Step 3: Append the implementation to `engine/src/planefuse/backend/ops.py`**
 
 ```python
 # ----------------------------------------------------------------------------
@@ -335,7 +335,7 @@ Expected: all PASS (CUDA parity runs on this machine; MPS auto-skips). If `test_
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/backend/ops.py tests/engine/test_align_ops.py
+git add engine/src/planefuse/backend/ops.py tests/engine/test_align_ops.py
 git commit -m "feat: alignment ops — luminance, warp, fft, phase correlation, log-polar"
 ```
 
@@ -346,8 +346,8 @@ git commit -m "feat: alignment ops — luminance, warp, fft, phase correlation, 
 Pure, device-free 3×3 matrix helpers. No torch — numpy float64 throughout for numerical stability; conversion to torch happens only at the warp boundary.
 
 **Files:**
-- Create: `engine/src/focusstack/align/__init__.py`
-- Create: `engine/src/focusstack/align/transforms.py`
+- Create: `engine/src/planefuse/align/__init__.py`
+- Create: `engine/src/planefuse/align/transforms.py`
 - Test: `tests/engine/test_transforms.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -357,7 +357,7 @@ Pure, device-free 3×3 matrix helpers. No torch — numpy float64 throughout for
 ```python
 import numpy as np
 
-from focusstack.align.transforms import (
+from planefuse.align.transforms import (
     compose,
     invert,
     project_to_similarity,
@@ -415,17 +415,17 @@ def test_project_to_similarity_recovers_similarity():
 - [ ] **Step 2: Run tests to verify failure**
 
 Run: `uv run pytest tests/engine/test_transforms.py -v`
-Expected: FAIL — `No module named 'focusstack.align'`.
+Expected: FAIL — `No module named 'planefuse.align'`.
 
 - [ ] **Step 3: Implement**
 
-`engine/src/focusstack/align/__init__.py`:
+`engine/src/planefuse/align/__init__.py`:
 
 ```python
 """Alignment pipeline (SPEC §6)."""
 ```
 
-`engine/src/focusstack/align/transforms.py`:
+`engine/src/planefuse/align/transforms.py`:
 
 ```python
 """Pure 3x3 transform math (SPEC §6). numpy float64; output->input pixel coords.
@@ -502,7 +502,7 @@ Expected: all PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/align tests/engine/test_transforms.py
+git add engine/src/planefuse/align tests/engine/test_transforms.py
 git commit -m "feat: alignment transform math (similarity, compose, procrustes projection)"
 ```
 
@@ -515,7 +515,7 @@ git commit -m "feat: alignment transform math (similarity, compose, procrustes p
 A small helper that turns a frame into the downscaled luminance proxy every estimator works on (SPEC §6 step 3a), recording the downscale factor so estimates can be scaled back to full resolution.
 
 **Files:**
-- Create: `engine/src/focusstack/align/proxy.py`
+- Create: `engine/src/planefuse/align/proxy.py`
 - Test: `tests/engine/test_proxy.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -525,8 +525,8 @@ A small helper that turns a frame into the downscaled luminance proxy every esti
 ```python
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.align.proxy import make_proxy
+from planefuse.backend import get_device
+from planefuse.align.proxy import make_proxy
 
 
 def test_proxy_downscales_to_max_long_edge():
@@ -548,9 +548,9 @@ def test_proxy_no_upscale_when_small():
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_proxy.py -v`
-Expected: FAIL — `No module named 'focusstack.align.proxy'`.
+Expected: FAIL — `No module named 'planefuse.align.proxy'`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/align/proxy.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/align/proxy.py`**
 
 ```python
 """Downscaled luminance proxy for alignment estimation (SPEC §6 step 3a)."""
@@ -560,7 +560,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from focusstack.backend import Device, ops
+from planefuse.backend import Device, ops
 
 
 def make_proxy(frame: np.ndarray, device: Device, max_long_edge: int = 2048
@@ -588,7 +588,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/align/proxy.py tests/engine/test_proxy.py
+git add engine/src/planefuse/align/proxy.py tests/engine/test_proxy.py
 git commit -m "feat: downscaled luminance proxy for alignment"
 ```
 
@@ -599,7 +599,7 @@ git commit -m "feat: downscaled luminance proxy for alignment"
 The two FFT-based initial-guess estimators (SPEC §6 step b), operating on proxies. Order matters: scale/rotation first, then translation on the scale/rotation-corrected pair.
 
 **Files:**
-- Create: `engine/src/focusstack/align/initial.py`
+- Create: `engine/src/planefuse/align/initial.py`
 - Test: `tests/engine/test_initial_guess.py`
 
 - [ ] **Step 1: Write the failing tests** (use the synthetic generator's known transforms)
@@ -609,10 +609,10 @@ The two FFT-based initial-guess estimators (SPEC §6 step b), operating on proxi
 ```python
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.align.initial import estimate_scale_rotation, estimate_translation
-from focusstack.align.proxy import make_proxy
-from focusstack.align.transforms import similarity_matrix
+from planefuse.backend import get_device
+from planefuse.align.initial import estimate_scale_rotation, estimate_translation
+from planefuse.align.proxy import make_proxy
+from planefuse.align.transforms import similarity_matrix
 from tests.synthetic.generate import generate_stack
 
 
@@ -648,9 +648,9 @@ def test_scale_rotation_recovered_on_breathing():
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_initial_guess.py -v`
-Expected: FAIL — `No module named 'focusstack.align.initial'`.
+Expected: FAIL — `No module named 'planefuse.align.initial'`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/align/initial.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/align/initial.py`**
 
 ```python
 """FFT-based initial alignment guesses (SPEC §6 step b)."""
@@ -661,7 +661,7 @@ import math
 
 import torch
 
-from focusstack.backend import ops
+from planefuse.backend import ops
 
 
 def estimate_translation(a: torch.Tensor, b: torch.Tensor) -> tuple[float, float]:
@@ -707,7 +707,7 @@ Expected: PASS (loose bounds).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/align/initial.py tests/engine/test_initial_guess.py
+git add engine/src/planefuse/align/initial.py tests/engine/test_initial_guess.py
 git commit -m "feat: log-polar scale/rotation and phase-correlation translation estimators"
 ```
 
@@ -718,7 +718,7 @@ git commit -m "feat: log-polar scale/rotation and phase-correlation translation 
 OpenCV `findTransformECC` (`MOTION_AFFINE`, 3-level pyramid, warm-started from the initial guess), then project to similarity (Task 3). Plus the overlap-region brightness match (SPEC §6 step d).
 
 **Files:**
-- Create: `engine/src/focusstack/align/refine.py`
+- Create: `engine/src/planefuse/align/refine.py`
 - Test: `tests/engine/test_refine.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -728,10 +728,10 @@ OpenCV `findTransformECC` (`MOTION_AFFINE`, 3-level pyramid, warm-started from t
 ```python
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.align.proxy import make_proxy
-from focusstack.align.refine import brightness_gain, refine_ecc
-from focusstack.align.transforms import similarity_matrix
+from planefuse.backend import get_device
+from planefuse.align.proxy import make_proxy
+from planefuse.align.refine import brightness_gain, refine_ecc
+from planefuse.align.transforms import similarity_matrix
 from tests.synthetic.generate import generate_stack
 
 
@@ -769,9 +769,9 @@ def test_brightness_gain_matches_mean():
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_refine.py -v`
-Expected: FAIL — `No module named 'focusstack.align.refine'`.
+Expected: FAIL — `No module named 'planefuse.align.refine'`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/align/refine.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/align/refine.py`**
 
 ```python
 """ECC refinement and brightness normalization (SPEC §6 steps c, d).
@@ -785,7 +785,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from focusstack.align.transforms import project_to_similarity
+from planefuse.align.transforms import project_to_similarity
 
 
 def _ecc_at_level(a: np.ndarray, b: np.ndarray, warp_init: np.ndarray,
@@ -855,7 +855,7 @@ Expected: PASS. (Cyrillic comment in the first test is a placeholder — replace
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/align/refine.py tests/engine/test_refine.py
+git add engine/src/planefuse/align/refine.py tests/engine/test_refine.py
 git commit -m "feat: ECC refinement with similarity projection and brightness gain"
 ```
 
@@ -866,7 +866,7 @@ git commit -m "feat: ECC refinement with similarity projection and brightness ga
 Compose the per-pair pipeline in the SPEC §6 step-b/c/d order into one function returning a transform, ECC correlation, and brightness gain.
 
 **Files:**
-- Create: `engine/src/focusstack/align/estimate.py`
+- Create: `engine/src/planefuse/align/estimate.py`
 - Test: `tests/engine/test_estimate_pair.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -876,8 +876,8 @@ Compose the per-pair pipeline in the SPEC §6 step-b/c/d order into one function
 ```python
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.align.estimate import PairResult, estimate_pair
+from planefuse.backend import get_device
+from planefuse.align.estimate import PairResult, estimate_pair
 from tests.synthetic.generate import generate_stack
 
 
@@ -905,9 +905,9 @@ def test_estimate_pair_translation_model_skips_logpolar():
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_estimate_pair.py -v`
-Expected: FAIL — `No module named 'focusstack.align.estimate'`.
+Expected: FAIL — `No module named 'planefuse.align.estimate'`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/align/estimate.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/align/estimate.py`**
 
 ```python
 """Per-pair transform estimation (SPEC §6 steps a-d), at proxy resolution."""
@@ -918,11 +918,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from focusstack.backend import Device, ops
-from focusstack.align.initial import estimate_scale_rotation, estimate_translation
-from focusstack.align.proxy import make_proxy
-from focusstack.align.refine import brightness_gain, refine_ecc
-from focusstack.align.transforms import similarity_matrix, translation_matrix
+from planefuse.backend import Device, ops
+from planefuse.align.initial import estimate_scale_rotation, estimate_translation
+from planefuse.align.proxy import make_proxy
+from planefuse.align.refine import brightness_gain, refine_ecc
+from planefuse.align.transforms import similarity_matrix, translation_matrix
 
 
 @dataclass
@@ -983,7 +983,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/align/estimate.py tests/engine/test_estimate_pair.py
+git add engine/src/planefuse/align/estimate.py tests/engine/test_estimate_pair.py
 git commit -m "feat: single-pair transform estimator combining initial guess + ECC"
 ```
 
@@ -996,7 +996,7 @@ git commit -m "feat: single-pair transform estimator combining initial guess + E
 Estimate consecutive pairs, compose to the reference (middle frame), apply the quality gate, and re-estimate across dropped frames (SPEC §6 steps 2, 4).
 
 **Files:**
-- Create: `engine/src/focusstack/align/chain.py`
+- Create: `engine/src/planefuse/align/chain.py`
 - Test: `tests/engine/test_chain.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1006,7 +1006,7 @@ Estimate consecutive pairs, compose to the reference (middle frame), apply the q
 ```python
 import numpy as np
 
-from focusstack.align.chain import chain_to_reference
+from planefuse.align.chain import chain_to_reference
 
 
 def test_chain_reference_is_identity():
@@ -1044,9 +1044,9 @@ def test_chain_flags_low_correlation():
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_chain.py -v`
-Expected: FAIL — `No module named 'focusstack.align.chain'`.
+Expected: FAIL — `No module named 'planefuse.align.chain'`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/align/chain.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/align/chain.py`**
 
 ```python
 """Chain consecutive pair transforms to the reference frame (SPEC §6 step 2, 4)."""
@@ -1057,7 +1057,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from focusstack.align.transforms import compose, invert
+from planefuse.align.transforms import compose, invert
 
 
 @dataclass
@@ -1109,7 +1109,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/align/chain.py tests/engine/test_chain.py
+git add engine/src/planefuse/align/chain.py tests/engine/test_chain.py
 git commit -m "feat: chain pairwise transforms to reference with quality-gate flagging"
 ```
 
@@ -1120,7 +1120,7 @@ git commit -m "feat: chain pairwise transforms to reference with quality-gate fl
 Scale a proxy-resolution transform to full resolution, warp the full frame on the active device, and produce the per-frame validity mask (1 where the sample came from inside the source frame, 0 in edge-clamped regions) — SPEC §6 step 5.
 
 **Files:**
-- Create: `engine/src/focusstack/align/warp.py`
+- Create: `engine/src/planefuse/align/warp.py`
 - Test: `tests/engine/test_warp_full.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1130,9 +1130,9 @@ Scale a proxy-resolution transform to full resolution, warp the full frame on th
 ```python
 import numpy as np
 
-from focusstack.backend import get_device, ops
-from focusstack.align.warp import warp_full
-from focusstack.align.transforms import translation_matrix
+from planefuse.backend import get_device, ops
+from planefuse.align.warp import warp_full
+from planefuse.align.transforms import translation_matrix
 
 
 def test_warp_full_identity_returns_frame_and_full_mask():
@@ -1169,9 +1169,9 @@ def test_warp_full_scales_proxy_translation():
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_warp_full.py -v`
-Expected: FAIL — `No module named 'focusstack.align.warp'`.
+Expected: FAIL — `No module named 'planefuse.align.warp'`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/align/warp.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/align/warp.py`**
 
 ```python
 """Full-resolution warp + validity mask (SPEC §6 step 5)."""
@@ -1181,8 +1181,8 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from focusstack.backend import Device, ops
-from focusstack.align.transforms import scale_transform_to_resolution
+from planefuse.backend import Device, ops
+from planefuse.align.transforms import scale_transform_to_resolution
 
 
 def warp_full(frame: np.ndarray, matrix_proxy: np.ndarray, device: Device,
@@ -1219,7 +1219,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/align/warp.py tests/engine/test_warp_full.py
+git add engine/src/planefuse/align/warp.py tests/engine/test_warp_full.py
 git commit -m "feat: full-resolution warp with validity mask generation"
 ```
 
@@ -1230,7 +1230,7 @@ git commit -m "feat: full-resolution warp with validity mask generation"
 Write aligned frames and masks to a cache directory atomically (write temp + rename, SPEC §12), and expose `FrameSource`-compatible readers so the existing PMax / tiling path consumes them unchanged.
 
 **Files:**
-- Create: `engine/src/focusstack/align/cache.py`
+- Create: `engine/src/planefuse/align/cache.py`
 - Test: `tests/engine/test_align_cache.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1240,7 +1240,7 @@ Write aligned frames and masks to a cache directory atomically (write temp + ren
 ```python
 import numpy as np
 
-from focusstack.align.cache import AlignedCache
+from planefuse.align.cache import AlignedCache
 
 
 def test_cache_roundtrip_frame_and_mask(tmp_path):
@@ -1273,9 +1273,9 @@ def test_cache_region_read(tmp_path):
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_align_cache.py -v`
-Expected: FAIL — `No module named 'focusstack.align.cache'`.
+Expected: FAIL — `No module named 'planefuse.align.cache'`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/align/cache.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/align/cache.py`**
 
 ```python
 """Aligned-frame + validity-mask cache (SPEC §9 cache/, §12 atomic writes).
@@ -1292,8 +1292,8 @@ from pathlib import Path
 
 import numpy as np
 
-from focusstack.io import load_image, save_image
-from focusstack.stack.sources import Region, _crop
+from planefuse.io import load_image, save_image
+from planefuse.stack.sources import Region, _crop
 
 
 class _CachedSource:
@@ -1338,7 +1338,7 @@ class AlignedCache:
         return _CachedSource(sorted(self.masks_dir.glob("*.png")), as_mask=True)
 ```
 
-Implementer note: `_crop` and `Region` are imported from `focusstack.stack.sources` (both already exist there). If importing a leading-underscore name feels wrong, promote `_crop` to `crop` in `sources.py` and update its one internal caller.
+Implementer note: `_crop` and `Region` are imported from `planefuse.stack.sources` (both already exist there). If importing a leading-underscore name feels wrong, promote `_crop` to `crop` in `sources.py` and update its one internal caller.
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -1348,7 +1348,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/align/cache.py tests/engine/test_align_cache.py
+git add engine/src/planefuse/align/cache.py tests/engine/test_align_cache.py
 git commit -m "feat: aligned-frame and validity-mask cache with atomic writes"
 ```
 
@@ -1359,8 +1359,8 @@ git commit -m "feat: aligned-frame and validity-mask cache with atomic writes"
 Tie it together: estimate every consecutive pair (streaming from a `FrameSource`), chain to the reference, run the quality gate (with optional drop + re-estimation across the gap), warp every frame at full resolution, write to the cache, and return a report.
 
 **Files:**
-- Create: `engine/src/focusstack/align/pipeline.py`
-- Modify: `engine/src/focusstack/align/__init__.py` (export `align_stack`, `AlignParams`, `AlignReport`)
+- Create: `engine/src/planefuse/align/pipeline.py`
+- Modify: `engine/src/planefuse/align/__init__.py` (export `align_stack`, `AlignParams`, `AlignReport`)
 - Test: `tests/engine/test_align_pipeline.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1370,9 +1370,9 @@ Tie it together: estimate every consecutive pair (streaming from a `FrameSource`
 ```python
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.align import AlignParams, align_stack
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.align import AlignParams, align_stack
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 
@@ -1406,7 +1406,7 @@ def test_align_stack_skip_when_pre_aligned(tmp_path):
 Run: `uv run pytest tests/engine/test_align_pipeline.py -v`
 Expected: FAIL — cannot import `AlignParams`/`align_stack`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/align/pipeline.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/align/pipeline.py`**
 
 ```python
 """Alignment orchestrator (SPEC §6, full pipeline)."""
@@ -1418,12 +1418,12 @@ from pathlib import Path
 
 import numpy as np
 
-from focusstack.backend import Device
-from focusstack.align.cache import AlignedCache
-from focusstack.align.chain import chain_to_reference
-from focusstack.align.estimate import estimate_pair
-from focusstack.align.warp import warp_full
-from focusstack.stack.base import FrameSource
+from planefuse.backend import Device
+from planefuse.align.cache import AlignedCache
+from planefuse.align.chain import chain_to_reference
+from planefuse.align.estimate import estimate_pair
+from planefuse.align.warp import warp_full
+from planefuse.stack.base import FrameSource
 
 ProgressFn = "Callable[[str, float], None]"
 
@@ -1518,12 +1518,12 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
     return AlignReport(ref, chain.matrices, corr, chain.flagged, chain.dropped, cache)
 ```
 
-Update `engine/src/focusstack/align/__init__.py`:
+Update `engine/src/planefuse/align/__init__.py`:
 
 ```python
 """Alignment pipeline (SPEC §6)."""
 
-from focusstack.align.pipeline import AlignParams, AlignReport, align_stack
+from planefuse.align.pipeline import AlignParams, AlignReport, align_stack
 
 __all__ = ["AlignParams", "AlignReport", "align_stack"]
 ```
@@ -1538,7 +1538,7 @@ Expected: PASS (the two listed tests). Add and pass the drop/re-chain test per t
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/align tests/engine/test_align_pipeline.py
+git add engine/src/planefuse/align tests/engine/test_align_pipeline.py
 git commit -m "feat: alignment orchestrator — estimate, chain, gate, warp, cache"
 ```
 
@@ -1551,7 +1551,7 @@ git commit -m "feat: alignment orchestrator — estimate, chain, gate, warp, cac
 Add an optional alignment stage before stacking; when enabled, stack the cached aligned frames and pass the validity masks through (the `masks=` parameter PMax and `stack_tiled` already accept).
 
 **Files:**
-- Modify: `engine/src/focusstack/pipeline.py`
+- Modify: `engine/src/planefuse/pipeline.py`
 - Test: `tests/engine/test_pipeline_align.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -1562,9 +1562,9 @@ Add an optional alignment stage before stacking; when enabled, stack the cached 
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from focusstack.io import save_image
-from focusstack.pipeline import stack_frames
-from focusstack.align import AlignParams
+from planefuse.io import save_image
+from planefuse.pipeline import stack_frames
+from planefuse.align import AlignParams
 from tests.synthetic.generate import generate_stack
 
 
@@ -1604,13 +1604,13 @@ def test_stack_pre_aligned_path_unchanged(tmp_path):
 Run: `uv run pytest tests/engine/test_pipeline_align.py -v`
 Expected: FAIL — `stack_frames() got an unexpected keyword argument 'align'`.
 
-- [ ] **Step 3: Modify `engine/src/focusstack/pipeline.py`**
+- [ ] **Step 3: Modify `engine/src/planefuse/pipeline.py`**
 
 Add imports near the top:
 
 ```python
 import tempfile
-from focusstack.align import AlignParams, align_stack
+from planefuse.align import AlignParams, align_stack
 ```
 
 Extend the signature and insert the alignment stage. Replace the body that builds `source` with an alignment-aware version:
@@ -1684,7 +1684,7 @@ Expected: PASS. If `test_stack_with_alignment_recovers_sharp` is below 0.90, thi
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/pipeline.py tests/engine/test_pipeline_align.py
+git add engine/src/planefuse/pipeline.py tests/engine/test_pipeline_align.py
 git commit -m "feat: integrate alignment stage into stack_frames with validity masks"
 ```
 
@@ -1704,10 +1704,10 @@ The milestone's headline test: recovered transforms vs ground truth — scale er
 ```python
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.align import AlignParams, align_stack
-from focusstack.align.transforms import invert, scale_transform_to_resolution
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.align import AlignParams, align_stack
+from planefuse.align.transforms import invert, scale_transform_to_resolution
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 
@@ -1753,7 +1753,7 @@ Iterate sign conventions in Tasks 5/6 until green. Expected end state: PASS.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add tests/engine/test_alignment_accuracy.py engine/src/focusstack/align
+git add tests/engine/test_alignment_accuracy.py engine/src/planefuse/align
 git commit -m "test: alignment accuracy vs ground truth (SPEC §13.2)"
 ```
 
@@ -1761,10 +1761,10 @@ git commit -m "test: alignment accuracy vs ground truth (SPEC §13.2)"
 
 ### Task 14: CLI `--align` flags + difference-preview demo
 
-Expose alignment in the `focusstack stack` command (SPEC §6 parameters) and add a tiny `--align-preview` that writes a before/after difference image so a human can see a handheld stack snap into place (the milestone's visual acceptance criterion).
+Expose alignment in the `planefuse stack` command (SPEC §6 parameters) and add a tiny `--align-preview` that writes a before/after difference image so a human can see a handheld stack snap into place (the milestone's visual acceptance criterion).
 
 **Files:**
-- Modify: `engine/src/focusstack/cli.py`
+- Modify: `engine/src/planefuse/cli.py`
 - Test: `tests/engine/test_cli_align.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1774,8 +1774,8 @@ Expose alignment in the `focusstack stack` command (SPEC §6 parameters) and add
 ```python
 from typer.testing import CliRunner
 
-from focusstack.cli import app
-from focusstack.io import save_image
+from planefuse.cli import app
+from planefuse.io import save_image
 from tests.synthetic.generate import generate_stack
 
 runner = CliRunner()
@@ -1809,12 +1809,12 @@ def test_cli_pre_aligned_default_no_align(tmp_path):
 Run: `uv run pytest tests/engine/test_cli_align.py -v`
 Expected: FAIL — `No such option: --align`.
 
-- [ ] **Step 3: Modify `engine/src/focusstack/cli.py`**
+- [ ] **Step 3: Modify `engine/src/planefuse/cli.py`**
 
 Add options to `stack` and build an `AlignParams` when `--align` is set:
 
 ```python
-from focusstack.align import AlignParams
+from planefuse.align import AlignParams
 ```
 
 New options on the `stack` command (insert before `tile_size`):
@@ -1885,14 +1885,14 @@ Generate a jittered stack, stack with and without `--align`, and eyeball:
 uv run python -c "
 import pathlib, tempfile
 from tests.synthetic.generate import generate_stack
-from focusstack.io import save_image
+from planefuse.io import save_image
 d = pathlib.Path(tempfile.mkdtemp()); print(d)
 s = generate_stack(h=400, w=500, n_frames=9, max_sigma=4.0, seed=99, scale_step=0.004, trans_jitter=4.0, rot_jitter=0.015)
 for i,f in enumerate(s.frames): save_image(f, d/f'f_{i:03d}.tif', bit_depth=16)
 "
 # then, with DIR from the print above:
-uv run focusstack stack DIR -o no_align.tif --device cpu
-uv run focusstack stack DIR -o aligned.tif --align --align-max-res 400 --device cpu
+uv run planefuse stack DIR -o no_align.tif --device cpu
+uv run planefuse stack DIR -o aligned.tif --align --align-max-res 400 --device cpu
 ```
 
 Expected: `aligned.tif` is visibly sharper / free of the ghosting present in `no_align.tif`. This is the §14 M2 acceptance ("a real handheld stack visibly aligns").
@@ -1902,7 +1902,7 @@ Expected: `aligned.tif` is visibly sharper / free of the ghosting present in `no
 Edit `README.md`: change `- [ ] M2 — alignment` to `- [x] M2 — alignment`.
 
 ```bash
-git add engine/src/focusstack/cli.py tests/engine/test_cli_align.py README.md
+git add engine/src/planefuse/cli.py tests/engine/test_cli_align.py README.md
 git commit -m "feat: --align CLI flags; mark M2 complete"
 ```
 

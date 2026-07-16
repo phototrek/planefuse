@@ -18,7 +18,7 @@ requests fail clearly; `auto` falls back to CPU.
 
 ## Out of memory
 
-FocusStack retries tiled processing, then tiled CPU. The queue message records the
+PlaneFuse retries tiled processing, then tiled CPU. The queue message records the
 fallback. Close other GPU-heavy apps or lower alignment proxy size if performance is poor.
 
 ## DNG export fails
@@ -30,7 +30,7 @@ the uncompressed output size free, and no other process locks the destination.
 ## Viewer histogram is unavailable
 
 Re-select the result. Viewer registration is idempotent; if source/result files were
-moved outside FocusStack, restore them or rescan. Clearing only `cache/tiles` while the
+moved outside PlaneFuse, restore them or rescan. Clearing only `cache/tiles` while the
 app is closed is safe; tiles rebuild on next view.
 
 ## Port 8425 is busy

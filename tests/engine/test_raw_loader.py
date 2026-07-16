@@ -4,15 +4,15 @@ import numpy as np
 import pytest
 import tifffile
 
-from focusstack.errors import RawDecodeError
-from focusstack.io import ProcessingDomain, load_image
-from focusstack.io.raw import RAW_EXTENSIONS, load_raw
+from planefuse.errors import RawDecodeError
+from planefuse.io import ProcessingDomain, load_image
+from planefuse.io.raw import RAW_EXTENSIONS, load_raw
 
 
 def write_test_raw(
     path: Path,
     *,
-    make: str = "FocusStack Camera Co",
+    make: str = "PlaneFuse Camera Co",
     model: str = "SameCam Pro",
     width: int = 40,
     height: int = 32,
@@ -70,9 +70,9 @@ def test_load_raw_is_scene_linear_no_bake(tmp_path: Path):
         np.array([8000, 4000, 2000], dtype=np.float32) / denominator,
         atol=2.0 / denominator,
     )
-    assert frame.metadata.camera_make == "FocusStack Camera Co"
+    assert frame.metadata.camera_make == "PlaneFuse Camera Co"
     assert frame.metadata.camera_model == "SameCam Pro"
-    assert frame.metadata.unique_camera_model == "FocusStack Camera Co SameCam Pro"
+    assert frame.metadata.unique_camera_model == "PlaneFuse Camera Co SameCam Pro"
     assert frame.metadata.cfa_pattern == (0, 1, 3, 2)
     assert frame.metadata.black_level == (512.0, 512.0, 512.0, 512.0)
     assert frame.metadata.white_level == 16383.0

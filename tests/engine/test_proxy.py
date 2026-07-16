@@ -1,7 +1,7 @@
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.align.proxy import make_proxy
+from planefuse.backend import get_device
+from planefuse.align.proxy import make_proxy
 
 
 def test_proxy_downscales_to_max_long_edge():

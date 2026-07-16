@@ -1,4 +1,4 @@
-from focusstack.select.cover import min_stab_cover, select_indices
+from planefuse.select.cover import min_stab_cover, select_indices
 
 
 def test_min_stab_cover_picks_right_endpoints():

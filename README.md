@@ -1,50 +1,57 @@
-# FocusStack
+# PlaneFuse — Free, Open-Source Focus Stacking Software for macOS, Windows & Linux
 
-**A free, open-source, local focus-stacking workspace — with a no-bake camera-RAW
-workflow that hands a real, re-editable Linear DNG back to your raw developer
-instead of a baked-in "look."**
+**PlaneFuse is a free, open-source focus stacking app for macro, product, and
+landscape photography — with a no-bake camera-RAW workflow that hands a real,
+re-editable Linear DNG back to your raw developer instead of a baked-in
+"look."**
 
-FocusStack merges a sequence of photos shot at different focus distances into a
-single image with more sharp detail than any one frame holds on its own. It runs
-entirely on your own machine — nothing is uploaded anywhere — using CUDA
-(NVIDIA), Apple MPS, or plain CPU. It works with ordinary developed images
-(TIFF/JPEG/PNG) or, for macro and product photographers who want full grading
-control afterwards, directly with camera RAW files.
+Focus stacking merges a sequence of photos shot at different focus distances
+into a single image with more sharp detail than any one frame holds on its
+own. PlaneFuse does this entirely on your own machine — nothing is uploaded
+anywhere — with GPU acceleration via CUDA (NVIDIA) or Apple MPS, and a plain
+CPU fallback. It works with ordinary developed images (TIFF/JPEG/PNG) or, for
+macro and product photographers who want full grading control afterwards,
+directly with camera RAW files. If you're looking for a free, open-source
+alternative to Helicon Focus or Zerene Stacker, this is what PlaneFuse was
+built to be — see the [feature-by-feature comparison](#planefuse-vs-helicon-focus-vs-zerene-stacker-vs-shinestacker)
+below.
 
-[![CI](https://github.com/AdrienLF/focus-stacker/actions/workflows/ci.yml/badge.svg)](https://github.com/AdrienLF/focus-stacker/actions/workflows/ci.yml)
+[![CI](https://github.com/AdrienLF/planefuse/actions/workflows/ci.yml/badge.svg)](https://github.com/AdrienLF/planefuse/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-![FocusStack RAW workspace](docs/assets/raw-workspace.png)
+![PlaneFuse focus stacking software — RAW workspace with deep-zoom viewer and job queue](docs/assets/raw-workspace.png)
 
 ## Contents
 
-- [What it can do](#what-it-can-do)
-- [Get started](#get-started)
-- [The RAW → Capture One workflow](#the-raw--capture-one-workflow)
+- [Features](#features)
+- [Installation (macOS, Windows, Linux & Docker)](#installation-macos-windows-linux--docker)
+- [Focus stack RAW files without a baked-in look: the Linear DNG → Capture One workflow](#focus-stack-raw-files-without-a-baked-in-look-the-linear-dng--capture-one-workflow)
 - [Documentation](#documentation)
-- [What it intentionally doesn't do](#what-it-intentionally-doesnt-do-and-why)
-- [How it compares](#how-it-compares)
+- [What PlaneFuse intentionally doesn't do](#what-planefuse-intentionally-doesnt-do-and-why)
+- [PlaneFuse vs Helicon Focus vs Zerene Stacker vs ShineStacker](#planefuse-vs-helicon-focus-vs-zerene-stacker-vs-shinestacker)
+- [FAQ](#faq)
 - [Verification status](#verification-status)
 - [Security boundary](#security-boundary)
 - [License](#license)
 
-## What it can do
+## Features
 
-- **Four stacking methods**, selectable individually or run side by side for
-  comparison in one click: **PMax** (pyramid/max-contrast, the general-purpose
-  default), **DMap** (depth-map, smoother output, can also export a depth map),
-  **Weighted average** (softmax blend, least halo-prone), and **Slab**
-  (hierarchical sub-stacking for very deep sequences).
-- **Alignment** with translation, similarity, or perspective models, Lanczos-3/
-  bicubic/bilinear warping, brightness matching, and a quality gate that can
-  exclude low-correlation frames — plus an alignment review so you can see
-  exactly what happened.
+- **Four focus stacking methods**, selectable individually or run side by side
+  for comparison in one click: **PMax** (pyramid/max-contrast, the
+  general-purpose default), **DMap** (depth-map, smoother output, can also
+  export a depth map), **Weighted average** (softmax blend, least halo-prone),
+  and **Slab** (hierarchical sub-stacking for very deep macro sequences).
+- **Image alignment** with translation, similarity, or perspective models,
+  Lanczos-3/bicubic/bilinear warping, brightness matching, and a quality gate
+  that can exclude low-correlation frames — plus an alignment review so you
+  can see exactly what happened.
 - **Smart frame selection and auto-grouping** to thin redundant frames out of
-  a deep bracket and to batch-split one folder into several separate subjects,
-  each reviewed before anything is queued.
+  a deep focus bracket and to batch-split one folder into several separate
+  subjects, each reviewed before anything is queued.
 - **Two processing domains:** ordinary developed images, or a **same-camera,
-  no-bake RAW** pipeline that fuses in scene-linear camera RGB with no
-  white balance, gamma, denoise, or sharpening baked in — see below.
+  no-bake RAW** pipeline that fuses in scene-linear camera RGB with no white
+  balance, gamma, denoise, or sharpening baked in — see the
+  [RAW workflow](#focus-stack-raw-files-without-a-baked-in-look-the-linear-dng--capture-one-workflow).
 - **A deep-zoom local web workspace**: tiled pan/zoom on huge images, four
   compare modes (single, result/source split, result/result side-by-side,
   hold-to-view before/after), a live server-computed RGB/luminance histogram
@@ -57,16 +64,16 @@ control afterwards, directly with camera RAW files.
   or — for RAW results — a validated **Linear DNG**; plus optional unclamped
   32-bit float TIFF and 16-bit depth-map companions, and a token-based
   filename template (`{stack_name}_{method}_{seq}`, etc).
-- **GPU acceleration** (CUDA / Apple MPS) with automatic tiled/CPU fallback on
-  out-of-memory, and per-run time/memory estimates.
-- **A CLI and a local HTTP + WebSocket API** for scripting, alongside the web
-  UI — see [`docs/API.md`](docs/API.md).
+- **GPU acceleration** (NVIDIA CUDA / Apple MPS) with automatic tiled/CPU
+  fallback on out-of-memory, and per-run time/memory estimates.
+- **A CLI and a local HTTP + WebSocket API** for scripting and batch focus
+  stacking, alongside the web UI — see [`docs/API.md`](docs/API.md).
 - **Thorough in-app documentation.** Click **Help** in the top bar (or press
   `?` in the workspace) for a searchable guide written for photographers,
   covering shooting technique, every parameter, and troubleshooting — not just
   a developer README.
 
-## Get started
+## Installation (macOS, Windows, Linux & Docker)
 
 Every install path serves the app at **`http://127.0.0.1:8425`**, opened
 automatically in your browser. Nothing is installed system-wide beyond the
@@ -78,8 +85,8 @@ No terminal required beyond the very first run, which needs
 [uv 0.11.28+](https://docs.astral.sh/uv/) and Node.js 22+ already on your
 machine (the launcher checks and tells you clearly if either is missing).
 
-- **macOS:** double-click `Launch FocusStack.command`.
-- **Windows:** double-click `Launch FocusStack.bat` — it prefers an NVIDIA GPU
+- **macOS:** double-click `Launch PlaneFuse.command`.
+- **Windows:** double-click `Launch PlaneFuse.bat` — it prefers an NVIDIA GPU
   and falls back to CPU automatically.
 
 The first launch does a locked dependency install and builds the web
@@ -92,7 +99,7 @@ scripts in `scripts/`.
 ```bash
 uv sync --frozen --extra cpu --extra raw
 cd ui && npm ci --no-fund && npm run build && cd ..
-uv run --frozen --extra cpu --extra raw focusstack serve
+uv run --frozen --extra cpu --extra raw planefuse serve
 ```
 
 On Apple silicon the macOS Torch wheel uses MPS automatically. On an
@@ -112,12 +119,12 @@ scripts\start-windows-gpu.bat   # Windows, NVIDIA GPU
 
 ```bash
 # GPU (requires nvidia-container-toolkit)
-FOCUSSTACK_PHOTOS=/path/to/your/photos docker compose up --build
+PLANEFUSE_PHOTOS=/path/to/your/photos docker compose up --build
 
 # CPU only
-docker build --target cpu -t focusstack:cpu .
+docker build --target cpu -t planefuse:cpu .
 docker run -p 127.0.0.1:8425:8425 \
-  -v /path/to/your/photos:/photos:ro -v fs-data:/data focusstack:cpu
+  -v /path/to/your/photos:/photos:ro -v pf-data:/data planefuse:cpu
 ```
 
 The container publishes to `127.0.0.1` only, by design — see
@@ -127,28 +134,28 @@ The container publishes to `127.0.0.1` only, by design — see
 
 ```bash
 # Rendered images
-uv run --frozen --extra cpu focusstack stack ./tiffs -o result.tif --method pmax --align
+uv run --frozen --extra cpu planefuse stack ./tiffs -o result.tif --method pmax --align
 
 # No-bake RAW stack, exported as a validated Linear DNG for Capture One,
 # plus the exact scene-linear float32 working values as a companion TIFF
-uv run --frozen --extra cpu --extra raw focusstack stack ./raw-stack \
+uv run --frozen --extra cpu --extra raw planefuse stack ./raw-stack \
   -o result.dng --method pmax --align --float-tiff result-scene-linear-float.tif
 ```
 
-RAW frames must all come from the same camera and sensor mode — see
-[The RAW → Capture One workflow](#the-raw--capture-one-workflow).
+RAW frames must all come from the same camera and sensor mode — see the
+[RAW workflow](#focus-stack-raw-files-without-a-baked-in-look-the-linear-dng--capture-one-workflow).
 
-## The RAW → Capture One workflow
+## Focus stack RAW files without a baked-in look: the Linear DNG → Capture One workflow
 
-Most stacking tools quietly develop your RAW files as part of stacking and
-hand you back a finished, already-graded image. FocusStack does the opposite
-on purpose: it decodes RAW frames with a fixed, minimal recipe — unit white
-balance, linear gamma, no auto brightness, no denoise, no sharpening, no
-output-colour conversion — fuses them in the camera's own scene-linear RGB,
-and exports a **16-bit, lossless, LibRaw-validated Linear DNG** that a real
-raw developer opens and grades exactly like any other RAW capture. You keep
-every white-balance, exposure, tone, colour, and sharpening decision, made on
-the *merged, in-focus* image instead of inherited from FocusStack.
+Most focus stacking tools quietly develop your RAW files as part of stacking
+and hand you back a finished, already-graded image. PlaneFuse does the
+opposite on purpose: it decodes RAW frames with a fixed, minimal recipe — unit
+white balance, linear gamma, no auto brightness, no denoise, no sharpening,
+no output-colour conversion — fuses them in the camera's own scene-linear
+RGB, and exports a **16-bit, lossless, LibRaw-validated Linear DNG** that a
+real raw developer opens and grades exactly like any other RAW capture. You
+keep every white-balance, exposure, tone, colour, and sharpening decision,
+made on the *merged, in-focus* image instead of inherited from PlaneFuse.
 
 The only irreversible step is AHD demosaicing, which stacking fundamentally
 requires (alignment and fusion combine full-colour samples from different
@@ -159,7 +166,7 @@ image can only honestly carry one set of DNG metadata.
 Full detail, including the Capture One import checklist and the file's exact
 provenance/verification guarantees: [`docs/RAW_DNG_CAPTURE_ONE.md`](docs/RAW_DNG_CAPTURE_ONE.md).
 
-![Linear DNG export](docs/assets/dng-export.png)
+![Linear DNG export from a RAW focus stack, ready for grading in Capture One](docs/assets/dng-export.png)
 
 ## Documentation
 
@@ -177,11 +184,11 @@ provenance/verification guarantees: [`docs/RAW_DNG_CAPTURE_ONE.md`](docs/RAW_DNG
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Implementation specification](docs/SPEC.md)
 
-![Synchronized comparison and histogram](docs/assets/compare-histogram.png)
+![Synchronized before/after comparison of a focus stacked image with live histogram](docs/assets/compare-histogram.png)
 
-## What it intentionally doesn't do, and why
+## What PlaneFuse intentionally doesn't do, and why
 
-- **No baked photographic look on RAW stacks.** FocusStack could apply white
+- **No baked photographic look on RAW stacks.** PlaneFuse could apply white
   balance, a tone curve, and sharpening like most stacking tools do — it
   deliberately doesn't, so the Linear DNG stays a real, fully re-editable RAW
   file instead of a finished rendering you'd have to fight to re-grade.
@@ -193,29 +200,29 @@ provenance/verification guarantees: [`docs/RAW_DNG_CAPTURE_ONE.md`](docs/RAW_DNG
   captures and geometric transforms, so there is no real single Bayer pattern
   it could claim to be — the DNG output is a demosaiced LinearRaw file, not a
   simulated original RAW.
-- **No camera tethering or capture control.** FocusStack is a post-processing
+- **No camera tethering or capture control.** PlaneFuse is a post-processing
   tool only; it doesn't talk to your camera. That keeps its scope, and its
   attack surface, deliberately small.
 - **No panorama stitching.** Some competitors combine stacking with
-  micro-panorama tools; FocusStack stays a stacking (and retouching) tool by
-  design rather than growing into a general compositing suite.
+  micro-panorama tools; PlaneFuse stays a focus stacking (and retouching)
+  tool by design rather than growing into a general compositing suite.
 - **No cloud processing, accounts, or mobile app.** Everything runs on your
   machine and binds to `127.0.0.1` only — your photos never leave your
   computer, and there's nothing to log into.
-- **No signed native installer (`.exe`/`.dmg`) yet.** FocusStack is a local
+- **No signed native installer (`.exe`/`.dmg`) yet.** PlaneFuse is a local
   web app served by a small Python backend, launched by a one-click script
   rather than a conventional installer. The trade-off buys a single
   cross-platform codebase and a fully inspectable stack (Python, Svelte, no
   binary blobs) at the cost of a slightly less "double-click and go" first
   run than a packaged desktop app.
 
-## How it compares
+## PlaneFuse vs Helicon Focus vs Zerene Stacker vs ShineStacker
 
-A fair, feature-level comparison against three other stacking tools, current
-as of mid-2026. Pricing and feature tiers change — check each vendor's site
-for the latest.
+A fair, feature-level comparison against three other focus stacking tools,
+current as of mid-2026. Pricing and feature tiers change — check each
+vendor's site for the latest.
 
-| | **FocusStack** | [Zerene Stacker](https://zerenesystems.com/) | [Helicon Focus](https://www.heliconsoft.com/) | [ShineStacker](https://github.com/lucalista/shinestacker) |
+| | **PlaneFuse** | [Zerene Stacker](https://zerenesystems.com/) | [Helicon Focus](https://www.heliconsoft.com/) | [ShineStacker](https://github.com/lucalista/shinestacker) |
 |---|---|---|---|---|
 | **License / price** | Free, open source (MIT) | Commercial — $89 Personal, higher Professional tier | Commercial — tiered, roughly $30–65/yr or $115–240 lifetime by tier | Free, open source (LGPL-3.0) |
 | **Source code** | Fully open | Closed | Closed | Fully open |
@@ -229,15 +236,49 @@ for the latest.
 | **Automation** | CLI + local HTTP/WebSocket API | GUI batch scripting | GUI batch scripting, Helicon Remote | Python API + Jupyter |
 | **Camera tethering / panorama** | No — stacking only | No | Yes — Helicon Remote (Pro+), micro-panorama stitching | No |
 
-FocusStack and ShineStacker are the two open-source options here, and the
-closest in spirit; the practical differences are FocusStack's GPU
-acceleration, its no-bake same-camera RAW pipeline built specifically for a
-Linear-DNG round trip into a raw developer, and its browser-based UI versus
+PlaneFuse and ShineStacker are the two open-source focus stacking options
+here, and the closest in spirit; the practical differences are PlaneFuse's
+GPU acceleration, its no-bake same-camera RAW pipeline built specifically for
+a Linear-DNG round trip into a raw developer, and its browser-based UI versus
 ShineStacker's native Qt desktop app and Python-first workflow. Zerene
 Stacker and Helicon Focus are the long-established commercial tools; both are
 mature, well-documented, and — being closed source — impossible to verify or
-extend yourself, which is the trade-off FocusStack and ShineStacker exist to
+extend yourself, which is the trade-off PlaneFuse and ShineStacker exist to
 avoid.
+
+## FAQ
+
+**Is PlaneFuse really free?**
+Yes. PlaneFuse is MIT-licensed, free for personal and commercial use, with no
+tiers, trials, accounts, or telemetry. The full source code is in this
+repository.
+
+**Is there a free alternative to Helicon Focus or Zerene Stacker?**
+PlaneFuse and ShineStacker are the two actively developed open-source focus
+stacking tools; the [comparison table](#planefuse-vs-helicon-focus-vs-zerene-stacker-vs-shinestacker)
+above sets out honestly where each one is stronger.
+
+**Can I focus stack RAW files?**
+Yes — and unlike most stacking software, PlaneFuse doesn't develop them into
+a finished look. It fuses in scene-linear camera RGB and exports a re-editable
+Linear DNG you grade in Capture One or any raw developer. All frames in one
+RAW stack must come from the same camera and sensor mode; the only
+irreversible step is demosaicing, which stacking inherently requires.
+
+**Does it run on Apple Silicon Macs?**
+Yes. On Apple silicon, PlaneFuse uses the GPU via Metal (MPS) automatically;
+on NVIDIA machines it uses CUDA; everywhere else it falls back to CPU, with
+automatic tiled processing if GPU memory runs out.
+
+**Are my photos uploaded anywhere?**
+No. PlaneFuse runs entirely on your machine and binds to `127.0.0.1` only.
+Source photos are read in place and never modified or deleted.
+
+**How many photos do I need for a focus stack?**
+It depends on magnification and aperture: a landscape may need 3–5 frames,
+while extreme macro can take 50–200+. PlaneFuse's smart frame selection can
+thin redundant frames from deep brackets, and the Slab method is built for
+very deep sequences. The in-app Help covers shooting technique in detail.
 
 ## Verification status
 
@@ -257,5 +298,5 @@ removal.
 
 ## License
 
-FocusStack is released under the [MIT License](LICENSE) — free for personal
+PlaneFuse is released under the [MIT License](LICENSE) — free for personal
 and commercial use, modification, and redistribution.

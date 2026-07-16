@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from focusstack.backend import get_device
+from planefuse.backend import get_device
 
 
 def _available_kinds() -> list[str]:

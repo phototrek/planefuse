@@ -1,6 +1,6 @@
 import numpy as np
 
-from focusstack.select.intervals import in_focus_interval, peak_index
+from planefuse.select.intervals import in_focus_interval, peak_index
 
 
 def test_peak_index_is_argmax():

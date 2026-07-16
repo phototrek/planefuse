@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from focusstack.stack.pyramid import build_laplacian, collapse_laplacian, pyramid_depth
+from planefuse.stack.pyramid import build_laplacian, collapse_laplacian, pyramid_depth
 
 
 def test_pyramid_depth_formula():

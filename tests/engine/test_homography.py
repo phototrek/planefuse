@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 import torch
 
-from focusstack.backend import ops
-from focusstack.align.refine import refine_ecc
+from planefuse.backend import ops
+from planefuse.align.refine import refine_ecc
 
 
 def test_projective_warp_matches_opencv_inverse_map():

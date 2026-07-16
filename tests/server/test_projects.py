@@ -2,8 +2,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.testclient import TestClient
 
-from focusstack_server.main import create_app
-from focusstack_server.projects import ProjectStore
+from planefuse_server.main import create_app
+from planefuse_server.projects import ProjectStore
 
 
 def _c(tmp_path):

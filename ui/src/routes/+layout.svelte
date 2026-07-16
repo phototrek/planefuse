@@ -38,7 +38,7 @@
   <header class="topbar">
     <a class="brand" href="/">
       <span class="bracket">⌖</span>
-      <span class="word">Focus<span class="accent">Stack</span></span>
+      <span class="word">Plane<span class="accent">Fuse</span></span>
     </a>
 
     <div class="project">

@@ -1,8 +1,8 @@
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.io import save_image
-from focusstack_server.main import create_app
+from planefuse.io import save_image
+from planefuse_server.main import create_app
 
 
 def _proj(tmp_path):
@@ -35,14 +35,14 @@ def test_frame_thumb_rejects_path_not_in_project(tmp_path):
 
 def test_spa_fallback_serves_index_when_ui_present(tmp_path, monkeypatch):
     # When a built UI exists, an unknown non-/api path returns index.html.
-    import focusstack_server.main as m
+    import planefuse_server.main as m
     static = tmp_path / "static"
     static.mkdir()
-    (static / "index.html").write_text("<!doctype html><title>FocusStack</title>")
+    (static / "index.html").write_text("<!doctype html><title>PlaneFuse</title>")
     monkeypatch.setattr(m, "_static_dir", lambda: static)
     c = TestClient(m.create_app(data_dir=tmp_path / "data"))
     r = c.get("/viewer")
     assert r.status_code == 200
-    assert "FocusStack" in r.text
+    assert "PlaneFuse" in r.text
     # /api still 404s as JSON, not the SPA shell
     assert c.get("/api/nope").status_code == 404

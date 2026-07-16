@@ -1,7 +1,7 @@
 from typer.testing import CliRunner
 
-from focusstack.cli import app
-from focusstack.io import save_image
+from planefuse.cli import app
+from planefuse.io import save_image
 from tests.synthetic.generate import generate_stack
 
 runner = CliRunner()

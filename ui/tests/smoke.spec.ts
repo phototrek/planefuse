@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const zionStack =
-  process.env.FOCUSSTACK_REAL_STACK_DIR ??
+  process.env.PLANEFUSE_REAL_STACK_DIR ??
   String.raw`G:\BackUpPhoto\USA_2018\2018-10-13 - Zion\STACK 2026`;
 
 const cleanup: string[] = [];
@@ -115,7 +115,7 @@ test('workspace: add -> PMax -> view -> export', async ({ page }) => {
       '..',
       'python',
       '-c',
-      'import sys; from focusstack.io import load_image; f=load_image(sys.argv[1]); assert f.pixels.shape == (64, 80, 3); assert f.bit_depth == 16',
+      'import sys; from planefuse.io import load_image; f=load_image(sys.argv[1]); assert f.pixels.shape == (64, 80, 3); assert f.bit_depth == 16',
       outFile
     ],
     { stdio: 'inherit' }
@@ -246,7 +246,7 @@ test('workspace: retouch result -> paint -> undo/redo -> flatten -> export', asy
       '..',
       'python',
       '-c',
-      'import sys; from focusstack.io import load_image; f=load_image(sys.argv[1]); assert f.pixels.shape == (64, 80, 3); assert f.bit_depth == 16',
+      'import sys; from planefuse.io import load_image; f=load_image(sys.argv[1]); assert f.pixels.shape == (64, 80, 3); assert f.bit_depth == 16',
       outFile
     ],
     { stdio: 'inherit' }
@@ -322,7 +322,7 @@ test('real Zion TIFFs: workspace: add -> PMax -> view -> export', async ({ page 
       '..',
       'python',
       '-c',
-      'import sys; from focusstack.io import load_image; f=load_image(sys.argv[1]); assert f.pixels.shape == (7795, 5199, 3); assert f.bit_depth == 16',
+      'import sys; from planefuse.io import load_image; f=load_image(sys.argv[1]); assert f.pixels.shape == (7795, 5199, 3); assert f.bit_depth == 16',
       outFile
     ],
     { stdio: 'inherit' }

@@ -2,9 +2,9 @@ from pathlib import Path
 
 import numpy as np
 
-from focusstack.io import srgb_encode, tonemap_preview
-from focusstack.io.display import SRGB_TO_XYZ_D65, auto_exposure_gain, camera_to_srgb
-from focusstack.io.metadata import ImageMetadata
+from planefuse.io import srgb_encode, tonemap_preview
+from planefuse.io.display import SRGB_TO_XYZ_D65, auto_exposure_gain, camera_to_srgb
+from planefuse.io.metadata import ImageMetadata
 
 IDENTITY9 = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
 

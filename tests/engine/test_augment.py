@@ -1,6 +1,6 @@
 import numpy as np
 
-from focusstack.select.intervals import build_rows
+from planefuse.select.intervals import build_rows
 
 
 def test_build_rows_one_per_reliable_cell():

@@ -12,8 +12,8 @@ server startup.
 
 ## User-facing files
 
-- `Launch FocusStack.command` — macOS Finder launcher.
-- `Launch FocusStack.bat` — Windows Explorer launcher.
+- `Launch PlaneFuse.command` — macOS Finder launcher.
+- `Launch PlaneFuse.bat` — Windows Explorer launcher.
 
 The existing scripts under `scripts/` remain the implementation authority and
 continue to support explicit CPU/GPU troubleshooting.

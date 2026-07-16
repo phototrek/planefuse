@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from focusstack.backend import get_device, ops
+from planefuse.backend import get_device, ops
 
 
 @dataclass

@@ -11,7 +11,7 @@ COPY ui/package.json ui/package-lock.json ./
 # (e.g. @rollup/rollup-linux-x64-gnu) when a download stalls (npm bug #4828).
 RUN npm ci --no-audit --no-fund --fetch-retries=5 --fetch-retry-maxtimeout=120000
 COPY ui/ ./
-# adapter-static emits to ../server/src/focusstack_server/static (svelte.config.js)
+# adapter-static emits to ../server/src/planefuse_server/static (svelte.config.js)
 RUN npm run build
 
 # --- CPU target: small image on python:3.12-slim ---
@@ -23,12 +23,12 @@ COPY pyproject.toml uv.lock ./
 COPY engine/ engine/
 COPY server/ server/
 RUN uv sync --frozen --no-dev --extra cpu --extra raw
-COPY --from=ui /app/server/src/focusstack_server/static server/src/focusstack_server/static
-ENV FOCUSSTACK_HOST=0.0.0.0 FOCUSSTACK_PORT=8425 FOCUSSTACK_DATA_DIR=/data
+COPY --from=ui /app/server/src/planefuse_server/static server/src/planefuse_server/static
+ENV PLANEFUSE_HOST=0.0.0.0 PLANEFUSE_PORT=8425 PLANEFUSE_DATA_DIR=/data
 EXPOSE 8425
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8425/api/system').status==200 else 1)"
-CMD ["uv", "run", "--frozen", "--no-dev", "--extra", "cpu", "--extra", "raw", "focusstack", "serve"]
+CMD ["uv", "run", "--frozen", "--no-dev", "--extra", "cpu", "--extra", "raw", "planefuse", "serve"]
 
 # --- CUDA target: runtime on nvidia/cuda; uv manages Python 3.12 ---
 # CUDA 12.8 runtime to match the cu128 torch wheels pinned in pyproject.toml.
@@ -40,9 +40,9 @@ COPY pyproject.toml uv.lock ./
 COPY engine/ engine/
 COPY server/ server/
 RUN uv python install 3.12.11 && uv sync --frozen --no-dev --extra cu12x --extra raw
-COPY --from=ui /app/server/src/focusstack_server/static server/src/focusstack_server/static
-ENV FOCUSSTACK_HOST=0.0.0.0 FOCUSSTACK_PORT=8425 FOCUSSTACK_DATA_DIR=/data
+COPY --from=ui /app/server/src/planefuse_server/static server/src/planefuse_server/static
+ENV PLANEFUSE_HOST=0.0.0.0 PLANEFUSE_PORT=8425 PLANEFUSE_DATA_DIR=/data
 EXPOSE 8425
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8425/api/system').status==200 else 1)"
-CMD ["uv", "run", "--frozen", "--no-dev", "--extra", "cu12x", "--extra", "raw", "focusstack", "serve"]
+CMD ["uv", "run", "--frozen", "--no-dev", "--extra", "cu12x", "--extra", "raw", "planefuse", "serve"]

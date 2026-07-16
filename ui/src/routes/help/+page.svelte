@@ -60,7 +60,7 @@
 </script>
 
 <svelte:head>
-  <title>Help — FocusStack</title>
+  <title>Help — PlaneFuse</title>
 </svelte:head>
 
 <div class="help">
@@ -95,7 +95,7 @@
 
   <main class="content">
     <header class="content-header">
-      <p class="eyebrow">FocusStack documentation</p>
+      <p class="eyebrow">PlaneFuse documentation</p>
       <h1>Help</h1>
       <p class="lede">Everything you need to shoot, stack, review, retouch, and export — written for
         photographers, with the technical detail included rather than hidden.</p>

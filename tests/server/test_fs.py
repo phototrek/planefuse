@@ -1,9 +1,9 @@
-import focusstack_server.api.fs as fs
+import planefuse_server.api.fs as fs
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.io import save_image
-from focusstack_server.main import create_app
+from planefuse.io import save_image
+from planefuse_server.main import create_app
 
 
 def test_fs_list_dirs_and_image_counts(tmp_path):

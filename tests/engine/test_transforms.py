@@ -1,6 +1,6 @@
 import numpy as np
 
-from focusstack.align.transforms import (
+from planefuse.align.transforms import (
     compose,
     invert,
     project_to_similarity,

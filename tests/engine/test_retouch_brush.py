@@ -1,6 +1,6 @@
 import numpy as np
 
-from focusstack.retouch.brush import Stroke, stroke_mask
+from planefuse.retouch.brush import Stroke, stroke_mask
 
 
 def _stroke(**kw):

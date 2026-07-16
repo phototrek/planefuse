@@ -2,8 +2,8 @@ import time
 
 from fastapi.testclient import TestClient
 
-from focusstack.io import save_image
-from focusstack_server.main import create_app
+from planefuse.io import save_image
+from planefuse_server.main import create_app
 from tests.synthetic.generate import generate_stack
 
 

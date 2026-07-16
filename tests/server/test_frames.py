@@ -3,8 +3,8 @@ from pathlib import Path
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.io import save_image
-from focusstack_server.main import create_app
+from planefuse.io import save_image
+from planefuse_server.main import create_app
 from tests.engine.test_raw_loader import write_test_raw
 
 
@@ -51,7 +51,7 @@ def test_scan_reports_raw_domain_camera_decoder_and_compatibility(tmp_path):
     report = c.post(f"/api/projects/{pid}/frames/scan", json={"path": str(src)}).json()
 
     assert report["domain"] == "scene_linear_camera_rgb"
-    assert report["camera"] == "FocusStack Camera Co SameCam Pro"
+    assert report["camera"] == "PlaneFuse Camera Co SameCam Pro"
     assert report["decoder"]["demosaic"] == "AHD"
     statuses = {item["name"]: item["status"] for item in report["files"]}
     assert statuses == {"a.dng": "ok", "b.dng": "incompatible_camera"}
@@ -74,7 +74,7 @@ def test_auto_group_prefers_exif_capture_time_gaps(tmp_path, monkeypatch):
     def fake_capture_time(path):
         return captures[Path(path).name]
 
-    monkeypatch.setattr("focusstack_server.api.frames.capture_time_from_file", fake_capture_time)
+    monkeypatch.setattr("planefuse_server.api.frames.capture_time_from_file", fake_capture_time)
     response = c.post(f"/api/projects/{pid}/frames/auto-group?max_seconds=10")
 
     assert response.status_code == 200
@@ -93,7 +93,7 @@ def test_auto_group_falls_back_to_filename_gaps_without_capture_time(tmp_path, m
     c, pid = _proj(tmp_path)
     c.post(f"/api/projects/{pid}/frames/scan", json={"path": str(src)})
     monkeypatch.setattr(
-        "focusstack_server.api.frames.capture_time_from_file",
+        "planefuse_server.api.frames.capture_time_from_file",
         lambda path: None,
     )
 

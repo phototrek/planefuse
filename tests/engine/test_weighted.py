@@ -1,14 +1,14 @@
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from focusstack.backend import get_device
-from focusstack.stack.base import get_algorithm
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.stack.base import get_algorithm
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 
 def test_weighted_registered():
-    from focusstack.stack import REGISTRY
+    from planefuse.stack import REGISTRY
     assert "weighted" in REGISTRY
 
 

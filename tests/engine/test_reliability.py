@@ -1,6 +1,6 @@
 import numpy as np
 
-from focusstack.select.reliability import excess_kurtosis, smooth_curves, classify_reliable
+from planefuse.select.reliability import excess_kurtosis, smooth_curves, classify_reliable
 
 
 def test_smooth_curves_sums_neighbours():

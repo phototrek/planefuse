@@ -1,7 +1,7 @@
 import threading
 import time
 
-from focusstack_server.jobs import JobQueue
+from planefuse_server.jobs import JobQueue
 
 
 def test_jobs_run_sequentially_and_report_progress():

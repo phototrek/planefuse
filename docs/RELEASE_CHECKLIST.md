@@ -14,7 +14,7 @@ named external hardware/application gate was not available in the verified envir
 | DNG tifffile + LibRaw pixel conformance | Pass | `tests/engine/test_dng_writer.py` |
 | Python dependency audit | Pass at recorded lock | `uvx pip-audit --path .venv/lib/python3.12/site-packages` |
 | npm audit | Pass at recorded lock | `npm audit --audit-level=high` |
-| CPU Docker build/health | Pass: pinned image built; localhost `/api/system` healthy | `docker build --target cpu -t focusstack:cpu .` |
+| CPU Docker build/health | Pass: pinned image built; localhost `/api/system` healthy | `docker build --target cpu -t planefuse:cpu .` |
 | CUDA engine/browser on NVIDIA hardware | Pending: no NVIDIA hardware in this run | Release-machine gate below |
 | Capture One Pro 16.7.5 manual import/edit/export | Pending: installed local app is 16.2.3.32 | Follow RAW guide checklist |
 
@@ -22,7 +22,7 @@ named external hardware/application gate was not available in the verified envir
 
 ```bash
 uv sync --frozen --extra cu12x --extra raw
-FOCUSSTACK_DEVICE=cuda uv run pytest -q -m cuda
+PLANEFUSE_DEVICE=cuda uv run pytest -q -m cuda
 cd ui && npm run test:e2e && cd ..
 docker compose config --quiet
 docker compose up --build

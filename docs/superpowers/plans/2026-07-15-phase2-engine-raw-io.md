@@ -21,9 +21,9 @@
 ### Task 1: Add explicit metadata and processing domains
 
 **Files:**
-- Create: `engine/src/focusstack/io/metadata.py`
-- Modify: `engine/src/focusstack/io/loader.py`
-- Modify: `engine/src/focusstack/io/__init__.py`
+- Create: `engine/src/planefuse/io/metadata.py`
+- Modify: `engine/src/planefuse/io/loader.py`
+- Modify: `engine/src/planefuse/io/__init__.py`
 - Modify: `tests/engine/test_loader.py`
 - Create: `tests/engine/test_metadata.py`
 
@@ -39,8 +39,8 @@
 ### Task 2: Implement complete rendered export metadata and 16-bit PNG
 
 **Files:**
-- Modify: `engine/src/focusstack/io/writer.py`
-- Create: `engine/src/focusstack/io/atomic.py`
+- Modify: `engine/src/planefuse/io/writer.py`
+- Create: `engine/src/planefuse/io/atomic.py`
 - Modify: `tests/engine/test_writer.py`
 - Modify: `tests/engine/test_writer_depth.py`
 - Create: `tests/engine/test_metadata_roundtrip.py`
@@ -57,10 +57,10 @@
 ### Task 3: Implement portable Lanczos-3 warping
 
 **Files:**
-- Modify: `engine/src/focusstack/backend/ops.py`
+- Modify: `engine/src/planefuse/backend/ops.py`
 - Modify: `tests/engine/test_align_ops.py`
-- Modify: `engine/src/focusstack/align/pipeline.py`
-- Modify: `engine/src/focusstack/cli.py`
+- Modify: `engine/src/planefuse/align/pipeline.py`
+- Modify: `engine/src/planefuse/cli.py`
 
 **Interfaces:**
 - Produces: `ops.warp(..., interp="lanczos3")` on CPU/CUDA/MPS.
@@ -74,10 +74,10 @@
 ### Task 4: Implement true perspective alignment
 
 **Files:**
-- Modify: `engine/src/focusstack/align/refine.py`
-- Modify: `engine/src/focusstack/align/estimate.py`
-- Modify: `engine/src/focusstack/align/warp.py`
-- Modify: `engine/src/focusstack/backend/ops.py`
+- Modify: `engine/src/planefuse/align/refine.py`
+- Modify: `engine/src/planefuse/align/estimate.py`
+- Modify: `engine/src/planefuse/align/warp.py`
+- Modify: `engine/src/planefuse/backend/ops.py`
 - Modify: `tests/engine/test_refine.py`
 - Create: `tests/engine/test_homography.py`
 
@@ -93,9 +93,9 @@
 ### Task 5: Decode RAW files without aesthetic development
 
 **Files:**
-- Create: `engine/src/focusstack/io/raw.py`
-- Modify: `engine/src/focusstack/io/loader.py`
-- Modify: `engine/src/focusstack/io/__init__.py`
+- Create: `engine/src/planefuse/io/raw.py`
+- Modify: `engine/src/planefuse/io/loader.py`
+- Modify: `engine/src/planefuse/io/__init__.py`
 - Modify: `engine/pyproject.toml`
 - Create: `tests/fixtures/raw/README.md`
 - Create: `tests/engine/test_raw_loader.py`
@@ -113,8 +113,8 @@
 ### Task 6: Validate same-camera RAW stacks
 
 **Files:**
-- Modify: `engine/src/focusstack/io/loader.py`
-- Modify: `server/src/focusstack_server/api/frames.py`
+- Modify: `engine/src/planefuse/io/loader.py`
+- Modify: `server/src/planefuse_server/api/frames.py`
 - Modify: `tests/engine/test_loader.py`
 - Modify: `tests/server/test_frames.py`
 
@@ -129,10 +129,10 @@
 ### Task 7: Preserve processing domain through pipeline and cache
 
 **Files:**
-- Modify: `engine/src/focusstack/stack/sources.py`
-- Modify: `engine/src/focusstack/align/cache.py`
-- Modify: `engine/src/focusstack/pipeline.py`
-- Modify: `engine/src/focusstack/stack/base.py`
+- Modify: `engine/src/planefuse/stack/sources.py`
+- Modify: `engine/src/planefuse/align/cache.py`
+- Modify: `engine/src/planefuse/pipeline.py`
+- Modify: `engine/src/planefuse/stack/base.py`
 - Modify: `tests/engine/test_pipeline.py`
 - Create: `tests/engine/test_raw_pipeline.py`
 
@@ -148,10 +148,10 @@
 ### Task 8: Write and validate Capture One-compatible Linear DNG
 
 **Files:**
-- Create: `engine/src/focusstack/io/dng.py`
-- Create: `engine/src/focusstack/io/provenance.py`
-- Modify: `engine/src/focusstack/io/writer.py`
-- Modify: `engine/src/focusstack/io/__init__.py`
+- Create: `engine/src/planefuse/io/dng.py`
+- Create: `engine/src/planefuse/io/provenance.py`
+- Modify: `engine/src/planefuse/io/writer.py`
+- Modify: `engine/src/planefuse/io/__init__.py`
 - Create: `tests/engine/test_dng_writer.py`
 - Create: `tests/fixtures/dng/README.md`
 
@@ -160,7 +160,7 @@
 
 - [ ] Write failing tests for required DNG version/backward version, `PhotometricInterpretation=LinearRaw`, 16-bit RGB samples, camera identity, color matrices/illuminants, as-shot neutral, black/white levels, baseline exposure, orientation, EXIF/XMP, and lossless compression.
 - [ ] Implement TIFF/DNG tags directly with tifffile using Adobe DNG 1.7.1 as the reference.
-- [ ] Encode FocusStack provenance in a registered private XMP namespace with ordered source hashes, transforms, quality, exclusions, method, parameters, decoder, and versions.
+- [ ] Encode PlaneFuse provenance in a registered private XMP namespace with ordered source hashes, transforms, quality, exclusions, method, parameters, decoder, and versions.
 - [ ] Reopen through tifffile and rawpy, compare decoded pixels within `1/65535`, and fail atomic publication if validation fails.
 - [ ] Add malformed metadata, truncated write, over-limit dimensions, and insufficient-space tests.
 - [ ] Commit with `feat: export validated Linear DNG`.
@@ -168,10 +168,10 @@
 ### Task 9: Add RAW/DNG CLI and server workflows
 
 **Files:**
-- Modify: `engine/src/focusstack/cli.py`
-- Modify: `server/src/focusstack_server/runners.py`
-- Modify: `server/src/focusstack_server/api/jobs.py`
-- Modify: `server/src/focusstack_server/projects.py`
+- Modify: `engine/src/planefuse/cli.py`
+- Modify: `server/src/planefuse_server/runners.py`
+- Modify: `server/src/planefuse_server/api/jobs.py`
+- Modify: `server/src/planefuse_server/projects.py`
 - Modify: `tests/engine/test_cli.py`
 - Modify: `tests/server/test_export.py`
 - Modify: `tests/server/test_runners.py`
@@ -188,9 +188,9 @@
 ### Task 10: Finish typed failures, OOM, golden, and performance gates
 
 **Files:**
-- Modify: `engine/src/focusstack/errors.py`
-- Modify: `server/src/focusstack_server/main.py`
-- Create: `server/src/focusstack_server/errors.py`
+- Modify: `engine/src/planefuse/errors.py`
+- Modify: `server/src/planefuse_server/main.py`
+- Create: `server/src/planefuse_server/errors.py`
 - Modify: `tests/engine/test_pipeline.py`
 - Create: `tests/server/test_errors.py`
 - Create: `tests/golden/README.md`

@@ -1,4 +1,4 @@
-# FocusStack M5 Part 1 — Retouch Engine + Server Design
+# PlaneFuse M5 Part 1 — Retouch Engine + Server Design
 
 **Date:** 2026-06-15
 **Status:** Approved (brainstorming)
@@ -20,12 +20,12 @@ Implement server-side retouch compositing (SPEC §11): a retouch session targets
 ## Architecture
 
 ```
-engine/src/focusstack/retouch/        # pure, zero server imports
+engine/src/planefuse/retouch/        # pure, zero server imports
   __init__.py
   brush.py        # stroke -> (gaussian-dab mask, bbox)
   session.py      # RetouchSession: composite, strokes, checkpoints, undo/redo
 
-server/src/focusstack_server/
+server/src/planefuse_server/
   retouch.py      # session persistence (project.json) + in-memory cache + tile rebuild
   api/retouch.py  # routes
 tests/

@@ -2,10 +2,10 @@ import numpy as np
 import pytest
 import torch
 
-from focusstack.backend import Device
-from focusstack.errors import ValidationError
-from focusstack.io import ProcessingDomain, save_image
-from focusstack.pipeline import stack_frames
+from planefuse.backend import Device
+from planefuse.errors import ValidationError
+from planefuse.io import ProcessingDomain, save_image
+from planefuse.pipeline import stack_frames
 from tests.synthetic.generate import generate_stack
 
 
@@ -54,10 +54,10 @@ def test_cuda_like_oom_retries_tiled(stack_dir, monkeypatch):
         calls.append(("tiled", actual_device.kind))
         return synth.sharp.astype(np.float32)
 
-    monkeypatch.setattr("focusstack.pipeline.get_device", lambda _prefer: device)
-    monkeypatch.setattr("focusstack.pipeline.get_algorithm", lambda _method: FailingAlgorithm())
-    monkeypatch.setattr("focusstack.pipeline.stack_tiled", tiled)
-    monkeypatch.setattr("focusstack.pipeline.empty_cache", lambda _device: None)
+    monkeypatch.setattr("planefuse.pipeline.get_device", lambda _prefer: device)
+    monkeypatch.setattr("planefuse.pipeline.get_algorithm", lambda _method: FailingAlgorithm())
+    monkeypatch.setattr("planefuse.pipeline.stack_tiled", tiled)
+    monkeypatch.setattr("planefuse.pipeline.empty_cache", lambda _device: None)
     result = stack_frames(
         sorted(directory.glob("*.tif")),
         method="pmax",
@@ -86,11 +86,11 @@ def test_mps_like_oom_falls_back_from_direct_to_tiled_to_cpu(stack_dir, monkeypa
         return synth.sharp.astype(np.float32)
 
     monkeypatch.setattr(
-        "focusstack.pipeline.get_device", lambda prefer: cpu if prefer == "cpu" else mps
+        "planefuse.pipeline.get_device", lambda prefer: cpu if prefer == "cpu" else mps
     )
-    monkeypatch.setattr("focusstack.pipeline.get_algorithm", lambda _method: FailingAlgorithm())
-    monkeypatch.setattr("focusstack.pipeline.stack_tiled", tiled)
-    monkeypatch.setattr("focusstack.pipeline.empty_cache", lambda _device: None)
+    monkeypatch.setattr("planefuse.pipeline.get_algorithm", lambda _method: FailingAlgorithm())
+    monkeypatch.setattr("planefuse.pipeline.stack_tiled", tiled)
+    monkeypatch.setattr("planefuse.pipeline.empty_cache", lambda _device: None)
     result = stack_frames(
         sorted(directory.glob("*.tif")),
         method="pmax",

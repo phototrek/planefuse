@@ -1,8 +1,8 @@
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.select.focus_measure import compute_focus_measures
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.select.focus_measure import compute_focus_measures
+from planefuse.stack.sources import ArrayFrameSource
 
 
 def test_focus_measures_shape_and_sharper_frame_scores_higher():

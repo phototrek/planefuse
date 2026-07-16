@@ -61,5 +61,5 @@ RAW results additionally enable validated Linear DNG. See the dedicated
 ## Project safety
 
 Removing a project only unregisters it. Source files are never deleted. `cache/` is
-rebuildable; close FocusStack before clearing it. Keep `project.json` with the source
+rebuildable; close PlaneFuse before clearing it. Keep `project.json` with the source
 files for provenance and repeatability.

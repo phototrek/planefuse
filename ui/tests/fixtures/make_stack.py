@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from focusstack.io import save_image  # noqa: E402
+from planefuse.io import save_image  # noqa: E402
 from tests.synthetic.generate import generate_stack  # noqa: E402
 
 

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from focusstack.io.metadata import ImageMetadata, ProcessingDomain
+from planefuse.io.metadata import ImageMetadata, ProcessingDomain
 
 
 def test_processing_domains_are_stable_serialized_values():

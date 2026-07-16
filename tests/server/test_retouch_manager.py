@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
 
-from focusstack.io import load_image, save_image
-from focusstack_server.projects import ProjectStore
-from focusstack_server.retouch import RetouchManager
-from focusstack_server.tiles import tile_path
+from planefuse.io import load_image, save_image
+from planefuse_server.projects import ProjectStore
+from planefuse_server.retouch import RetouchManager
+from planefuse_server.tiles import tile_path
 
 
 def _project_with_two_results(tmp_path, source_shape=(64, 80, 3)):

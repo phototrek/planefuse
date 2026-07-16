@@ -3,9 +3,9 @@ import json
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.io import save_image
-from focusstack_server.main import create_app
-from focusstack_server.tiles import build_pyramid
+from planefuse.io import save_image
+from planefuse_server.main import create_app
+from planefuse_server.tiles import build_pyramid
 
 from tests.engine.test_raw_loader import write_test_raw
 

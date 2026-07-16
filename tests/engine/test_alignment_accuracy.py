@@ -16,10 +16,10 @@ cross-seed variance while staying well within the spec.
 import numpy as np
 import pytest
 
-from focusstack.align import AlignParams, align_stack
-from focusstack.align.transforms import invert, scale_transform_to_resolution
-from focusstack.backend import get_device
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.align import AlignParams, align_stack
+from planefuse.align.transforms import invert, scale_transform_to_resolution
+from planefuse.backend import get_device
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 

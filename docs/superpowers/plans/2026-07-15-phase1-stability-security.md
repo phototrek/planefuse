@@ -22,7 +22,7 @@
 
 **Files:**
 - Modify: `tests/engine/test_align_ops.py`
-- Modify: `engine/src/focusstack/backend/ops.py:107-118`
+- Modify: `engine/src/planefuse/backend/ops.py:107-118`
 
 **Interfaces:**
 - Consumes: `ops.warp(img, matrix, out_shape, interp)`
@@ -63,14 +63,14 @@ Expected: all available-device cases pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/backend/ops.py tests/engine/test_align_ops.py
+git add engine/src/planefuse/backend/ops.py tests/engine/test_align_ops.py
 git commit -m "fix: keep warp normalization MPS-safe"
 ```
 
 ### Task 2: Recover unreliable chain links directly to the reference
 
 **Files:**
-- Modify: `engine/src/focusstack/align/pipeline.py`
+- Modify: `engine/src/planefuse/align/pipeline.py`
 - Modify: `tests/engine/test_alignment_accuracy.py`
 - Modify: `tests/engine/test_align_pipeline.py`
 
@@ -126,7 +126,7 @@ Expected: all pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add engine/src/focusstack/align/pipeline.py tests/engine/test_alignment_accuracy.py tests/engine/test_align_pipeline.py
+git add engine/src/planefuse/align/pipeline.py tests/engine/test_alignment_accuracy.py tests/engine/test_align_pipeline.py
 git commit -m "fix: recover low-confidence alignment links"
 ```
 
@@ -197,17 +197,17 @@ git commit -m "build: update secure supported toolchains"
 ### Task 4: Make device choice and browser CI deterministic
 
 **Files:**
-- Modify: `engine/src/focusstack/backend/device.py`
+- Modify: `engine/src/planefuse/backend/device.py`
 - Modify: `tests/engine/test_device.py`
 - Modify: `ui/playwright.config.ts`
 - Modify: `.github/workflows/ci.yml`
 
 **Interfaces:**
-- Produces: `FOCUSSTACK_DEVICE=cpu|mps|cuda|auto` as the default used only when callers request `auto`.
+- Produces: `PLANEFUSE_DEVICE=cpu|mps|cuda|auto` as the default used only when callers request `auto`.
 
 - [ ] **Step 1: Write environment-preference tests**
 
-Use `monkeypatch.setenv("FOCUSSTACK_DEVICE", "cpu")` and assert `get_device("auto").kind == "cpu"`; assert an explicit `get_device("mps")` is not overridden.
+Use `monkeypatch.setenv("PLANEFUSE_DEVICE", "cpu")` and assert `get_device("auto").kind == "cpu"`; assert an explicit `get_device("mps")` is not overridden.
 
 - [ ] **Step 2: Verify RED**
 
@@ -217,11 +217,11 @@ Expected: auto still selects the host accelerator.
 
 - [ ] **Step 3: Implement the environment default**
 
-At the start of `get_device`, resolve `auto` through `FOCUSSTACK_DEVICE`, validate it with the same `_VALID` set, and leave explicit arguments untouched.
+At the start of `get_device`, resolve `auto` through `PLANEFUSE_DEVICE`, validate it with the same `_VALID` set, and leave explicit arguments untouched.
 
 - [ ] **Step 4: Pin Playwright webServer to CPU in CI/local deterministic mode**
 
-Set the web server environment to `FOCUSSTACK_DEVICE=cpu`; add a separate `test:e2e:mps` script that sets MPS for the release gate.
+Set the web server environment to `PLANEFUSE_DEVICE=cpu`; add a separate `test:e2e:mps` script that sets MPS for the release gate.
 
 - [ ] **Step 5: Add browser smoke to CI**
 
@@ -234,7 +234,7 @@ Run the device tests, CPU Playwright suite, and MPS Playwright suite.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add engine/src/focusstack/backend/device.py tests/engine/test_device.py ui/playwright.config.ts ui/package.json .github/workflows/ci.yml
+git add engine/src/planefuse/backend/device.py tests/engine/test_device.py ui/playwright.config.ts ui/package.json .github/workflows/ci.yml
 git commit -m "ci: verify deterministic browser workflows"
 ```
 

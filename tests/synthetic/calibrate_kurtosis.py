@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.select.focus_measure import compute_focus_measures
-from focusstack.select.reliability import excess_kurtosis, smooth_curves
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.select.focus_measure import compute_focus_measures
+from planefuse.select.reliability import excess_kurtosis, smooth_curves
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 

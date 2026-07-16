@@ -4,7 +4,7 @@
 
 **Goal:** Give the server the project + frame primitives the single-screen workspace needs — auto scratch projects, additive frame add/remove, a save/rename endpoint, and startup pruning of stale unsaved scratch projects — with no change to existing UI.
 
-**Architecture:** The server stays project-centric (a project is a directory with `project.json` + `cache/`). We make a project obtainable with no user input (scratch dir under the data dir), add additive frame verbs alongside the existing replace-style `scan`, add a top-level project `PATCH`, and prune abandoned scratch dirs on startup. All changes live in `server/src/focusstack_server/`. Spec: `docs/superpowers/specs/2026-06-15-workspace-ui-design.md` §4.
+**Architecture:** The server stays project-centric (a project is a directory with `project.json` + `cache/`). We make a project obtainable with no user input (scratch dir under the data dir), add additive frame verbs alongside the existing replace-style `scan`, add a top-level project `PATCH`, and prune abandoned scratch dirs on startup. All changes live in `server/src/planefuse_server/`. Spec: `docs/superpowers/specs/2026-06-15-workspace-ui-design.md` §4.
 
 **Tech Stack:** Python 3.12, FastAPI, pydantic, pytest + `fastapi.testclient`. Run via `uv run pytest`.
 
@@ -17,8 +17,8 @@
 ### Task 1: Scratch project create (empty path) + unsaved default
 
 **Files:**
-- Modify: `server/src/focusstack_server/projects.py` (`ProjectStore.create`)
-- Modify: `server/src/focusstack_server/api/projects.py` (`CreateProject`, `create`)
+- Modify: `server/src/planefuse_server/projects.py` (`ProjectStore.create`)
+- Modify: `server/src/planefuse_server/api/projects.py` (`CreateProject`, `create`)
 - Test: `tests/server/test_workspace_projects.py` (new)
 
 - [ ] **Step 1: Write the failing test**
@@ -28,7 +28,7 @@ Create `tests/server/test_workspace_projects.py`:
 ```python
 from fastapi.testclient import TestClient
 
-from focusstack_server.main import create_app
+from planefuse_server.main import create_app
 
 
 def _c(tmp_path):
@@ -70,7 +70,7 @@ First confirm the route is the only caller of the method whose signature changes
 grep -rn "\.create(" server/src
 ```
 
-In `server/src/focusstack_server/projects.py`, replace the `create` method:
+In `server/src/planefuse_server/projects.py`, replace the `create` method:
 
 ```python
     def create(self, directory: Path | None, name: str) -> Project:
@@ -91,7 +91,7 @@ In `server/src/focusstack_server/projects.py`, replace the `create` method:
 
 - [ ] **Step 4: Implement the route**
 
-In `server/src/focusstack_server/api/projects.py`, change the model + route:
+In `server/src/planefuse_server/api/projects.py`, change the model + route:
 
 ```python
 class CreateProject(BaseModel):
@@ -114,14 +114,14 @@ Expected: PASS (new tests pass; existing project tests still pass).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add server/src/focusstack_server/projects.py server/src/focusstack_server/api/projects.py tests/server/test_workspace_projects.py
+git add server/src/planefuse_server/projects.py server/src/planefuse_server/api/projects.py tests/server/test_workspace_projects.py
 git commit -m "feat: scratch projects (empty-path create) with unsaved default"
 ```
 
 ### Task 2: Save / rename endpoint
 
 **Files:**
-- Modify: `server/src/focusstack_server/api/projects.py` (add `SaveBody`, `save` route)
+- Modify: `server/src/planefuse_server/api/projects.py` (add `SaveBody`, `save` route)
 - Test: `tests/server/test_workspace_projects.py` (append)
 
 - [ ] **Step 1: Write the failing test**
@@ -150,7 +150,7 @@ Expected: FAIL (405/404 — no PATCH `/{pid}` route).
 
 - [ ] **Step 3: Implement the route**
 
-In `server/src/focusstack_server/api/projects.py`, add (after `patch_ui_state`):
+In `server/src/planefuse_server/api/projects.py`, add (after `patch_ui_state`):
 
 ```python
 class SaveBody(BaseModel):
@@ -180,14 +180,14 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/src/focusstack_server/api/projects.py tests/server/test_workspace_projects.py
+git add server/src/planefuse_server/api/projects.py tests/server/test_workspace_projects.py
 git commit -m "feat: PATCH /projects/{id} for save/rename (name + ui_state.saved)"
 ```
 
 ### Task 3: Additive frame add / remove (+ shared report helper)
 
 **Files:**
-- Modify: `server/src/focusstack_server/api/frames.py`
+- Modify: `server/src/planefuse_server/api/frames.py`
 - Test: `tests/server/test_workspace_frames.py` (new)
 
 - [ ] **Step 1: Write the failing test**
@@ -198,8 +198,8 @@ Create `tests/server/test_workspace_frames.py`:
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.io import save_image
-from focusstack_server.main import create_app
+from planefuse.io import save_image
+from planefuse_server.main import create_app
 
 
 def _proj(tmp_path):
@@ -259,7 +259,7 @@ Expected: FAIL (404/405 — no add/remove routes).
 
 - [ ] **Step 3: Refactor + implement in `frames.py`**
 
-In `server/src/focusstack_server/api/frames.py`, add a `PathsBody`, an `_expand` helper, and a shared `_report` builder; reimplement `scan` on top of `_report`; add the two routes. Full additions/changes:
+In `server/src/planefuse_server/api/frames.py`, add a `PathsBody`, an `_expand` helper, and a shared `_report` builder; reimplement `scan` on top of `_report`; add the two routes. Full additions/changes:
 
 ```python
 class PathsBody(BaseModel):
@@ -344,14 +344,14 @@ Expected: PASS (new add/remove tests pass; existing scan tests still pass).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/src/focusstack_server/api/frames.py tests/server/test_workspace_frames.py
+git add server/src/planefuse_server/api/frames.py tests/server/test_workspace_frames.py
 git commit -m "feat: additive frames/add and frames/remove (folders + files, dedup)"
 ```
 
 ### Task 4: Prune stale unsaved scratch projects on startup
 
 **Files:**
-- Modify: `server/src/focusstack_server/main.py` (`_prune_scratch` + call in `create_app`)
+- Modify: `server/src/planefuse_server/main.py` (`_prune_scratch` + call in `create_app`)
 - Test: `tests/server/test_workspace_prune.py` (new)
 
 - [ ] **Step 1: Write the failing test**
@@ -364,7 +364,7 @@ import time
 
 from fastapi.testclient import TestClient
 
-from focusstack_server.main import create_app
+from planefuse_server.main import create_app
 
 
 def _client(tmp_path):
@@ -404,7 +404,7 @@ Expected: FAIL (nothing pruned — `old_unsaved` still present).
 
 - [ ] **Step 3: Implement prune in `main.py`**
 
-Add imports at the top of `server/src/focusstack_server/main.py` (alongside existing imports):
+Add imports at the top of `server/src/planefuse_server/main.py` (alongside existing imports):
 
 ```python
 import json
@@ -424,7 +424,7 @@ def _prune_scratch(data_dir: Path, max_age_days: int = 7) -> None:
     scratch = Path(data_dir) / "scratch"
     if not scratch.is_dir():
         return
-    from focusstack_server.projects import ProjectStore
+    from planefuse_server.projects import ProjectStore
 
     store = ProjectStore(data_dir)
     cutoff = time.time() - max_age_days * 86400
@@ -461,7 +461,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/src/focusstack_server/main.py tests/server/test_workspace_prune.py
+git add server/src/planefuse_server/main.py tests/server/test_workspace_prune.py
 git commit -m "feat: prune stale unsaved scratch projects on startup"
 ```
 

@@ -1,4 +1,4 @@
-// Minimal typed client over the focusstack-server REST API (SPEC §9).
+// Minimal typed client over the planefuse-server REST API (SPEC §9).
 export interface SystemInfo { device: string; device_name: string; free_memory: number; version: string; torch: string; }
 export interface ParamSpec { name: string; label: string; type: string; default: unknown; min: number | null; max: number | null; choices: string[] | null; tooltip: string | null; }
 export interface Algorithm { name: string; params: ParamSpec[]; }

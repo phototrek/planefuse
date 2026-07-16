@@ -108,7 +108,7 @@ def test_benchmark_records_runtime_versions():
 
 
 def test_root_macos_launcher_delegates_and_keeps_failures_visible():
-    launcher = ROOT / "Launch FocusStack.command"
+    launcher = ROOT / "Launch PlaneFuse.command"
     text = launcher.read_text()
     assert os.access(launcher, os.X_OK)
     assert 'scripts/start-macos.sh' in text
@@ -126,7 +126,7 @@ def test_root_macos_launcher_pauses_only_on_failure_and_preserves_status(tmp_pat
     scripts = project / "scripts"
     scripts.mkdir(parents=True)
 
-    launcher = project / "Launch FocusStack.command"
+    launcher = project / "Launch PlaneFuse.command"
     launcher.write_bytes((ROOT / launcher.name).read_bytes())
     launcher.chmod(0o755)
     starter = scripts / "start-macos.sh"
@@ -146,20 +146,20 @@ def test_root_macos_launcher_pauses_only_on_failure_and_preserves_status(tmp_pat
 
 
 def test_root_windows_launcher_prefers_gpu_and_falls_back_to_cpu():
-    text = (ROOT / "Launch FocusStack.bat").read_text().lower()
+    text = (ROOT / "Launch PlaneFuse.bat").read_text().lower()
     probe = text.index("nvidia-smi")
     gpu = text.index("scripts\\start-windows-gpu.bat")
     cpu = text.index("scripts\\start-windows-cpu.bat")
     assert probe < gpu < cpu
     assert "if errorlevel 1 goto cpu" in text
-    assert "exit /b %focusstack_exit%" in text
+    assert "exit /b %planefuse_exit%" in text
 
     lines = [line.strip() for line in text.splitlines()]
-    status_capture = lines.index('set "focusstack_exit=%errorlevel%"')
-    failure_check = lines.index('if not "%focusstack_exit%"=="0" (')
+    status_capture = lines.index('set "planefuse_exit=%errorlevel%"')
+    failure_check = lines.index('if not "%planefuse_exit%"=="0" (')
     pause_lines = [index for index, line in enumerate(lines) if line == "pause"]
     failure_close = lines.index(")", failure_check + 1)
-    exit_line = lines.index("exit /b %focusstack_exit%")
+    exit_line = lines.index("exit /b %planefuse_exit%")
     assert len(pause_lines) == 1
     assert status_capture < failure_check < pause_lines[0] < failure_close < exit_line
 
@@ -167,8 +167,8 @@ def test_root_windows_launcher_prefers_gpu_and_falls_back_to_cpu():
 def test_docs_advertise_both_root_one_click_launchers():
     for document in (ROOT / "README.md", ROOT / "docs/INSTALL.md"):
         text = document.read_text()
-        assert "Launch FocusStack.command" in text
-        assert "Launch FocusStack.bat" in text
+        assert "Launch PlaneFuse.command" in text
+        assert "Launch PlaneFuse.bat" in text
     install = (ROOT / "docs/INSTALL.md").read_text()
     assert "NVIDIA" in install
     assert "fall" in install.lower() and "CPU" in install

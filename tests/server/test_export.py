@@ -3,8 +3,8 @@ import time
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.io import load_image, save_image, validate_linear_dng
-from focusstack_server.main import create_app
+from planefuse.io import load_image, save_image, validate_linear_dng
+from planefuse_server.main import create_app
 from tests.engine.test_raw_loader import write_test_raw
 
 

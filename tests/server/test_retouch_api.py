@@ -3,9 +3,9 @@ import time
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.io import load_image, save_image
-from focusstack_server.main import create_app
-from focusstack_server.projects import ProjectStore
+from planefuse.io import load_image, save_image
+from planefuse_server.main import create_app
+from planefuse_server.projects import ProjectStore
 from tests.synthetic.generate import generate_stack
 
 

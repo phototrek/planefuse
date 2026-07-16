@@ -1,10 +1,10 @@
-# FocusStack M1 — Engine Core + PMax + CLI Implementation Plan
+# PlaneFuse M1 — Engine Core + PMax + CLI Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers-extended-cc:subagent-driven-development (if subagents available) or superpowers-extended-cc:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the FocusStack engine foundation — device abstraction (cuda/mps/cpu), image I/O, the synthetic test-stack generator, the PMax stacking algorithm with streaming fold and halo control, tiled processing, and a working `focusstack stack` CLI — per `docs/SPEC.md` Milestone M1.
+**Goal:** Build the PlaneFuse engine foundation — device abstraction (cuda/mps/cpu), image I/O, the synthetic test-stack generator, the PMax stacking algorithm with streaming fold and halo control, tiled processing, and a working `planefuse stack` CLI — per `docs/SPEC.md` Milestone M1.
 
-**Architecture:** One device-agnostic PyTorch implementation of every image op (`backend/ops.py`); algorithms stream frames from a `FrameSource` so memory is independent of frame count; tiling and CPU fallback make OOM impossible. uv workspace with the `focusstack` engine package; tests are CPU-first with device-parametrized parity tests that auto-skip absent accelerators.
+**Architecture:** One device-agnostic PyTorch implementation of every image op (`backend/ops.py`); algorithms stream frames from a `FrameSource` so memory is independent of frame count; tiling and CPU fallback make OOM impossible. uv workspace with the `planefuse` engine package; tests are CPU-first with device-parametrized parity tests that auto-skip absent accelerators.
 
 **Tech Stack:** Python 3.12, PyTorch 2.x, tifffile, Pillow, typer, pytest, scikit-image (tests only), uv.
 
@@ -27,8 +27,8 @@
 **Files:**
 - Create: `pyproject.toml` (workspace root)
 - Create: `engine/pyproject.toml`
-- Create: `engine/src/focusstack/__init__.py`
-- Create: `engine/src/focusstack/errors.py`
+- Create: `engine/src/planefuse/__init__.py`
+- Create: `engine/src/planefuse/errors.py`
 - Create: `tests/__init__.py` (empty), `tests/engine/__init__.py` (empty)
 - Create: `.gitignore`
 
@@ -36,10 +36,10 @@
 
 ```toml
 [project]
-name = "focusstack-dev"
+name = "planefuse-dev"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["focusstack"]
+dependencies = ["planefuse"]
 
 [project.optional-dependencies]
 cpu = ["torch>=2.4"]
@@ -49,7 +49,7 @@ cu12x = ["torch>=2.4"]
 conflicts = [[{ extra = "cpu" }, { extra = "cu12x" }]]
 
 [tool.uv.sources]
-focusstack = { workspace = true }
+planefuse = { workspace = true }
 torch = [
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-cu128", extra = "cu12x" },
@@ -99,7 +99,7 @@ On macOS arm64 the plain `uv sync` resolves the default PyPI torch wheel (which 
 
 ```toml
 [project]
-name = "focusstack"
+name = "planefuse"
 version = "0.1.0"
 description = "Professional GPU-accelerated focus stacking engine"
 requires-python = ">=3.12"
@@ -114,42 +114,42 @@ dependencies = [
 ]
 
 [project.scripts]
-focusstack = "focusstack.cli:app"
+planefuse = "planefuse.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/focusstack"]
+packages = ["src/planefuse"]
 ```
 
-- [ ] **Step 3: Write `engine/src/focusstack/errors.py`**
+- [ ] **Step 3: Write `engine/src/planefuse/errors.py`**
 
 ```python
 """Typed engine exceptions (SPEC §12)."""
 
 
-class FocusStackError(Exception):
+class PlaneFuseError(Exception):
     """Base for all engine errors."""
 
 
-class ValidationError(FocusStackError):
+class ValidationError(PlaneFuseError):
     """Input frames failed validation (size/bit-depth/format)."""
 
 
-class BackendError(FocusStackError):
+class BackendError(PlaneFuseError):
     """Device unavailable or device-level failure."""
 
 
-class AlignmentError(FocusStackError):
+class AlignmentError(PlaneFuseError):
     """Alignment failed (M2; defined now so the hierarchy is complete)."""
 ```
 
-- [ ] **Step 4: Write `engine/src/focusstack/__init__.py`**
+- [ ] **Step 4: Write `engine/src/planefuse/__init__.py`**
 
 ```python
-"""FocusStack engine — see docs/SPEC.md."""
+"""PlaneFuse engine — see docs/SPEC.md."""
 
 __version__ = "0.1.0"
 ```
@@ -173,14 +173,14 @@ ui/dist/
 Run: `uv sync --extra cu12x` (this machine has NVIDIA; use `--extra cpu` if not)
 Expected: resolves and installs torch + deps, creates `uv.lock` and `.venv`.
 
-Run: `uv run python -c "import focusstack, torch; print(focusstack.__version__, torch.__version__, torch.version.cuda, torch.cuda.is_available())"`
+Run: `uv run python -c "import planefuse, torch; print(planefuse.__version__, torch.__version__, torch.version.cuda, torch.cuda.is_available())"`
 Expected on this machine: `0.1.0 2.x.y+cu128 12.8 True`. **`None False` means the index pin did not reach the engine package's torch dependency** (the extra-conditional `[tool.uv.sources]` lives in the root project; if uv resolves engine's torch from default PyPI instead, duplicate the `cpu`/`cu12x` extras + `[tool.uv.sources]` torch block into `engine/pyproject.toml` and re-sync). Do not proceed until this prints `True` — every CUDA parity test in this plan auto-skips without it, and the suite would silently go green CPU-only.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add pyproject.toml uv.lock engine/ tests/ .gitignore
-git commit -m "feat: uv workspace scaffold with focusstack engine package"
+git commit -m "feat: uv workspace scaffold with planefuse engine package"
 ```
 
 ---
@@ -188,8 +188,8 @@ git commit -m "feat: uv workspace scaffold with focusstack engine package"
 ### Task 2: Device abstraction
 
 **Files:**
-- Create: `engine/src/focusstack/backend/__init__.py`
-- Create: `engine/src/focusstack/backend/device.py`
+- Create: `engine/src/planefuse/backend/__init__.py`
+- Create: `engine/src/planefuse/backend/device.py`
 - Create: `tests/engine/conftest.py`
 - Test: `tests/engine/test_device.py`
 
@@ -201,8 +201,8 @@ git commit -m "feat: uv workspace scaffold with focusstack engine package"
 import pytest
 import torch
 
-from focusstack.backend import Device, free_memory, get_device
-from focusstack.errors import BackendError
+from planefuse.backend import Device, free_memory, get_device
+from planefuse.errors import BackendError
 
 
 def test_cpu_device_always_available():
@@ -245,7 +245,7 @@ def test_free_memory_on_auto_device():
 import pytest
 import torch
 
-from focusstack.backend import get_device
+from planefuse.backend import get_device
 
 
 def _available_kinds() -> list[str]:
@@ -272,9 +272,9 @@ def accel_device(request):
 - [ ] **Step 2: Run tests to verify failure**
 
 Run: `uv run pytest tests/engine/test_device.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'focusstack.backend'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'planefuse.backend'`
 
-- [ ] **Step 3: Implement `engine/src/focusstack/backend/device.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/backend/device.py`**
 
 ```python
 """Runtime device selection (SPEC §4). One implementation, three devices."""
@@ -286,7 +286,7 @@ from dataclasses import dataclass
 
 import torch
 
-from focusstack.errors import BackendError
+from planefuse.errors import BackendError
 
 log = logging.getLogger(__name__)
 
@@ -340,10 +340,10 @@ def empty_cache(device: Device) -> None:
         torch.mps.empty_cache()
 ```
 
-`engine/src/focusstack/backend/__init__.py`:
+`engine/src/planefuse/backend/__init__.py`:
 
 ```python
-from focusstack.backend.device import Device, empty_cache, free_memory, get_device
+from planefuse.backend.device import Device, empty_cache, free_memory, get_device
 
 __all__ = ["Device", "empty_cache", "free_memory", "get_device"]
 ```
@@ -356,7 +356,7 @@ Expected: all PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/backend tests/engine
+git add engine/src/planefuse/backend tests/engine
 git commit -m "feat: device abstraction with cuda/mps/cpu selection and memory probes"
 ```
 
@@ -365,7 +365,7 @@ git commit -m "feat: device abstraction with cuda/mps/cpu selection and memory p
 ### Task 3: Core image ops (device-agnostic torch)
 
 **Files:**
-- Create: `engine/src/focusstack/backend/ops.py`
+- Create: `engine/src/planefuse/backend/ops.py`
 - Test: `tests/engine/test_ops.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -377,7 +377,7 @@ import numpy as np
 import pytest
 import torch
 
-from focusstack.backend import get_device, ops
+from planefuse.backend import get_device, ops
 
 
 def _rand_img(c=3, h=64, w=80, seed=0):
@@ -467,7 +467,7 @@ def test_upsample_parity(accel_device):
 Run: `uv run pytest tests/engine/test_ops.py -v`
 Expected: FAIL — `cannot import name 'ops'`
 
-- [ ] **Step 3: Implement `engine/src/focusstack/backend/ops.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/backend/ops.py`**
 
 ```python
 """Device-agnostic image operations — the one true implementation (SPEC §4).
@@ -485,7 +485,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from focusstack.backend.device import Device
+from planefuse.backend.device import Device
 
 
 def to_tensor(arr: np.ndarray, device: Device) -> torch.Tensor:
@@ -569,7 +569,7 @@ Expected: PASS (accelerator parity tests run on this machine's CUDA device; MPS 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/backend/ops.py tests/engine/test_ops.py
+git add engine/src/planefuse/backend/ops.py tests/engine/test_ops.py
 git commit -m "feat: device-agnostic core image ops with parity tests"
 ```
 
@@ -578,8 +578,8 @@ git commit -m "feat: device-agnostic core image ops with parity tests"
 ### Task 4: Image loading + stack validation
 
 **Files:**
-- Create: `engine/src/focusstack/io/__init__.py`
-- Create: `engine/src/focusstack/io/loader.py`
+- Create: `engine/src/planefuse/io/__init__.py`
+- Create: `engine/src/planefuse/io/loader.py`
 - Test: `tests/engine/test_loader.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -594,8 +594,8 @@ import pytest
 import tifffile
 from PIL import Image
 
-from focusstack.errors import ValidationError
-from focusstack.io.loader import load_image, validate_stack
+from planefuse.errors import ValidationError
+from planefuse.io.loader import load_image, validate_stack
 
 
 @pytest.fixture
@@ -668,9 +668,9 @@ def test_validate_stack_unreadable(tmp_path):
 - [ ] **Step 2: Run tests to verify failure**
 
 Run: `uv run pytest tests/engine/test_loader.py -v`
-Expected: FAIL — `No module named 'focusstack.io'`
+Expected: FAIL — `No module named 'planefuse.io'`
 
-- [ ] **Step 3: Implement `engine/src/focusstack/io/loader.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/io/loader.py`**
 
 ```python
 """Image loading and stack validation (SPEC §5, §12).
@@ -688,7 +688,7 @@ import numpy as np
 import tifffile
 from PIL import Image
 
-from focusstack.errors import ValidationError
+from planefuse.errors import ValidationError
 
 SUPPORTED = {".tif", ".tiff", ".jpg", ".jpeg", ".png"}
 _ICC_TAG = 34675
@@ -783,10 +783,10 @@ def validate_stack(paths: list[Path]) -> ValidationReport:
     return report
 ```
 
-`engine/src/focusstack/io/__init__.py`:
+`engine/src/planefuse/io/__init__.py`:
 
 ```python
-from focusstack.io.loader import Frame, ValidationReport, load_image, validate_stack
+from planefuse.io.loader import Frame, ValidationReport, load_image, validate_stack
 
 __all__ = ["Frame", "ValidationReport", "load_image", "validate_stack"]
 ```
@@ -799,7 +799,7 @@ Expected: all PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/io tests/engine/test_loader.py
+git add engine/src/planefuse/io tests/engine/test_loader.py
 git commit -m "feat: image loading with validation report and ICC passthrough"
 ```
 
@@ -808,8 +808,8 @@ git commit -m "feat: image loading with validation report and ICC passthrough"
 ### Task 5: Image writing (16-bit TIFF / JPEG / PNG)
 
 **Files:**
-- Create: `engine/src/focusstack/io/writer.py`
-- Modify: `engine/src/focusstack/io/__init__.py` (export `save_image`)
+- Create: `engine/src/planefuse/io/writer.py`
+- Modify: `engine/src/planefuse/io/__init__.py` (export `save_image`)
 - Test: `tests/engine/test_writer.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -820,8 +820,8 @@ git commit -m "feat: image loading with validation report and ICC passthrough"
 import numpy as np
 import pytest
 
-from focusstack.io import load_image
-from focusstack.io.writer import save_image
+from planefuse.io import load_image
+from planefuse.io.writer import save_image
 
 
 @pytest.fixture
@@ -884,9 +884,9 @@ def test_unknown_extension_raises(tmp_path, img):
 - [ ] **Step 2: Run tests to verify failure**
 
 Run: `uv run pytest tests/engine/test_writer.py -v`
-Expected: FAIL — `No module named 'focusstack.io.writer'`
+Expected: FAIL — `No module named 'planefuse.io.writer'`
 
-- [ ] **Step 3: Implement `engine/src/focusstack/io/writer.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/io/writer.py`**
 
 ```python
 """Image export (SPEC §5). Clamping to [0, 1] happens HERE and only here."""
@@ -943,11 +943,11 @@ def save_image(
     raise ValueError(f"unsupported output format {suffix!r} (use .tif/.jpg/.png)")
 ```
 
-Update `engine/src/focusstack/io/__init__.py`:
+Update `engine/src/planefuse/io/__init__.py`:
 
 ```python
-from focusstack.io.loader import Frame, ValidationReport, load_image, validate_stack
-from focusstack.io.writer import save_image
+from planefuse.io.loader import Frame, ValidationReport, load_image, validate_stack
+from planefuse.io.writer import save_image
 
 __all__ = ["Frame", "ValidationReport", "load_image", "save_image", "validate_stack"]
 ```
@@ -962,7 +962,7 @@ Expected: all PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/io tests/engine/test_writer.py
+git add engine/src/planefuse/io tests/engine/test_writer.py
 git commit -m "feat: image export with export-boundary clamping and ICC embedding"
 ```
 
@@ -1065,7 +1065,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from focusstack.backend import get_device, ops
+from planefuse.backend import get_device, ops
 
 
 @dataclass
@@ -1187,8 +1187,8 @@ git commit -m "feat: synthetic focus-stack generator with ground truth"
 ### Task 7: Laplacian pyramid
 
 **Files:**
-- Create: `engine/src/focusstack/stack/__init__.py` (empty for now)
-- Create: `engine/src/focusstack/stack/pyramid.py`
+- Create: `engine/src/planefuse/stack/__init__.py` (empty for now)
+- Create: `engine/src/planefuse/stack/pyramid.py`
 - Test: `tests/engine/test_pyramid.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1199,8 +1199,8 @@ git commit -m "feat: synthetic focus-stack generator with ground truth"
 import numpy as np
 import torch
 
-from focusstack.backend import get_device, ops
-from focusstack.stack.pyramid import build_laplacian, collapse_laplacian, pyramid_depth
+from planefuse.backend import get_device, ops
+from planefuse.stack.pyramid import build_laplacian, collapse_laplacian, pyramid_depth
 
 
 def test_pyramid_depth_formula():
@@ -1243,9 +1243,9 @@ def test_pyramid_parity(accel_device):
 - [ ] **Step 2: Run tests to verify failure**
 
 Run: `uv run pytest tests/engine/test_pyramid.py -v`
-Expected: FAIL — `No module named 'focusstack.stack.pyramid'`
+Expected: FAIL — `No module named 'planefuse.stack.pyramid'`
 
-- [ ] **Step 3: Implement `engine/src/focusstack/stack/pyramid.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/stack/pyramid.py`**
 
 ```python
 """Laplacian pyramid build/collapse (SPEC §7.1).
@@ -1260,7 +1260,7 @@ import math
 
 import torch
 
-from focusstack.backend import ops
+from planefuse.backend import ops
 
 
 def pyramid_depth(h: int, w: int) -> int:
@@ -1286,7 +1286,7 @@ def collapse_laplacian(lap: list[torch.Tensor], residual: torch.Tensor) -> torch
     return cur
 ```
 
-`engine/src/focusstack/stack/__init__.py`: empty file for now (populated in Task 8).
+`engine/src/planefuse/stack/__init__.py`: empty file for now (populated in Task 8).
 
 - [ ] **Step 4: Run tests to verify pass**
 
@@ -1296,7 +1296,7 @@ Expected: all PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/stack tests/engine/test_pyramid.py
+git add engine/src/planefuse/stack tests/engine/test_pyramid.py
 git commit -m "feat: exact-reconstruction Laplacian pyramid"
 ```
 
@@ -1305,9 +1305,9 @@ git commit -m "feat: exact-reconstruction Laplacian pyramid"
 ### Task 8: Algorithm registry + frame sources
 
 **Files:**
-- Create: `engine/src/focusstack/stack/base.py`
-- Create: `engine/src/focusstack/stack/sources.py`
-- Modify: `engine/src/focusstack/stack/__init__.py`
+- Create: `engine/src/planefuse/stack/base.py`
+- Create: `engine/src/planefuse/stack/sources.py`
+- Modify: `engine/src/planefuse/stack/__init__.py`
 - Test: `tests/engine/test_registry.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1318,9 +1318,9 @@ git commit -m "feat: exact-reconstruction Laplacian pyramid"
 import numpy as np
 import pytest
 
-from focusstack.io import save_image
-from focusstack.stack.base import REGISTRY, ParamSpec, StackResult, get_algorithm, register
-from focusstack.stack.sources import ArrayFrameSource, DirFrameSource
+from planefuse.io import save_image
+from planefuse.stack.base import REGISTRY, ParamSpec, StackResult, get_algorithm, register
+from planefuse.stack.sources import ArrayFrameSource, DirFrameSource
 
 
 def test_register_and_lookup():
@@ -1371,9 +1371,9 @@ def test_dir_source(tmp_path):
 - [ ] **Step 2: Run tests to verify failure**
 
 Run: `uv run pytest tests/engine/test_registry.py -v`
-Expected: FAIL — `No module named 'focusstack.stack.base'`
+Expected: FAIL — `No module named 'planefuse.stack.base'`
 
-- [ ] **Step 3: Implement `engine/src/focusstack/stack/base.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/stack/base.py`**
 
 ```python
 """Algorithm registry with typed parameters (SPEC §7).
@@ -1453,7 +1453,7 @@ def get_algorithm(name: str) -> StackAlgorithm:
     return REGISTRY[name]()
 ```
 
-`engine/src/focusstack/stack/sources.py`:
+`engine/src/planefuse/stack/sources.py`:
 
 ```python
 """Frame sources: stream frames from memory or disk (SPEC §7 streaming)."""
@@ -1464,7 +1464,7 @@ from pathlib import Path
 
 import numpy as np
 
-from focusstack.io import load_image
+from planefuse.io import load_image
 
 Region = tuple[int, int, int, int]  # (y0, x0, y1, x1)
 
@@ -1502,10 +1502,10 @@ class DirFrameSource:
         return _crop(load_image(self.paths[idx]).pixels, region)
 ```
 
-Update `engine/src/focusstack/stack/__init__.py`:
+Update `engine/src/planefuse/stack/__init__.py`:
 
 ```python
-from focusstack.stack.base import (
+from planefuse.stack.base import (
     REGISTRY,
     FrameSource,
     ParamSpec,
@@ -1513,7 +1513,7 @@ from focusstack.stack.base import (
     get_algorithm,
     register,
 )
-from focusstack.stack.sources import ArrayFrameSource, DirFrameSource
+from planefuse.stack.sources import ArrayFrameSource, DirFrameSource
 
 __all__ = [
     "REGISTRY",
@@ -1535,7 +1535,7 @@ Expected: all PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/stack tests/engine/test_registry.py
+git add engine/src/planefuse/stack tests/engine/test_registry.py
 git commit -m "feat: algorithm registry with typed params and streaming frame sources"
 ```
 
@@ -1544,8 +1544,8 @@ git commit -m "feat: algorithm registry with typed params and streaming frame so
 ### Task 9: PMax — streaming fold + halo control + validity masks
 
 **Files:**
-- Create: `engine/src/focusstack/stack/pmax.py`
-- Modify: `engine/src/focusstack/stack/__init__.py` (import pmax so it registers)
+- Create: `engine/src/planefuse/stack/pmax.py`
+- Modify: `engine/src/planefuse/stack/__init__.py` (import pmax so it registers)
 - Test: `tests/engine/test_pmax.py`
 
 This is SPEC §7.1 verbatim — read it before implementing. Key invariants: memory independent of frame count (streaming fold), winner maps are **int32**, halo control is a median filter on winner maps + a second streaming pass, result stays unclamped.
@@ -1560,8 +1560,8 @@ import pytest
 import torch
 from skimage.metrics import structural_similarity
 
-from focusstack.backend import get_device
-from focusstack.stack import ArrayFrameSource, get_algorithm
+from planefuse.backend import get_device
+from planefuse.stack import ArrayFrameSource, get_algorithm
 from tests.synthetic.generate import generate_stack
 
 
@@ -1663,7 +1663,7 @@ class ArrayMaskSource:
 Run: `uv run pytest tests/engine/test_pmax.py -v`
 Expected: FAIL — `unknown stacking algorithm 'pmax'`
 
-- [ ] **Step 3: Implement `engine/src/focusstack/stack/pmax.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/stack/pmax.py`**
 
 ```python
 """PMax: Laplacian pyramid, max-energy selection, streaming fold (SPEC §7.1)."""
@@ -1676,8 +1676,8 @@ from typing import Any
 import numpy as np
 import torch
 
-from focusstack.backend import Device, ops
-from focusstack.stack.base import (
+from planefuse.backend import Device, ops
+from planefuse.stack.base import (
     CancelFn,
     FrameSource,
     ParamSpec,
@@ -1685,7 +1685,7 @@ from focusstack.stack.base import (
     StackResult,
     register,
 )
-from focusstack.stack.pyramid import build_laplacian, collapse_laplacian, pyramid_depth
+from planefuse.stack.pyramid import build_laplacian, collapse_laplacian, pyramid_depth
 
 _NEG_INF = float("-inf")
 
@@ -1820,10 +1820,10 @@ class PMax:
         )
 ```
 
-Append to `engine/src/focusstack/stack/__init__.py`:
+Append to `engine/src/planefuse/stack/__init__.py`:
 
 ```python
-import focusstack.stack.pmax  # noqa: E402,F401  (registers "pmax")
+import planefuse.stack.pmax  # noqa: E402,F401  (registers "pmax")
 ```
 
 - [ ] **Step 4: Run tests to verify pass**
@@ -1836,7 +1836,7 @@ If `test_pmax_device_parity` fails with isolated large diffs, that is argmax tie
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/stack tests/engine/test_pmax.py
+git add engine/src/planefuse/stack tests/engine/test_pmax.py
 git commit -m "feat: PMax streaming fold with halo control and validity masks"
 ```
 
@@ -1847,7 +1847,7 @@ git commit -m "feat: PMax streaming fold with halo control and validity masks"
 ### Task 10: Memory estimation + tiled processing
 
 **Files:**
-- Create: `engine/src/focusstack/tiles.py`
+- Create: `engine/src/planefuse/tiles.py`
 - Test: `tests/engine/test_tiles.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1858,9 +1858,9 @@ git commit -m "feat: PMax streaming fold with halo control and validity masks"
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from focusstack.backend import get_device
-from focusstack.stack import ArrayFrameSource, get_algorithm
-from focusstack.tiles import estimate_stack_bytes, plan_tiles, stack_tiled
+from planefuse.backend import get_device
+from planefuse.stack import ArrayFrameSource, get_algorithm
+from planefuse.tiles import estimate_stack_bytes, plan_tiles, stack_tiled
 from tests.synthetic.generate import generate_stack
 
 
@@ -1906,9 +1906,9 @@ def test_tiled_matches_untiled():
 - [ ] **Step 2: Run tests to verify failure**
 
 Run: `uv run pytest tests/engine/test_tiles.py -v`
-Expected: FAIL — `No module named 'focusstack.tiles'`
+Expected: FAIL — `No module named 'planefuse.tiles'`
 
-- [ ] **Step 3: Implement `engine/src/focusstack/tiles.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/tiles.py`**
 
 ```python
 """Tiled processing with feathered overlap blending (SPEC §8)."""
@@ -1920,9 +1920,9 @@ from typing import Any
 
 import numpy as np
 
-from focusstack.backend import Device
-from focusstack.stack.base import FrameSource
-from focusstack.stack.pyramid import pyramid_depth
+from planefuse.backend import Device
+from planefuse.stack.base import FrameSource
+from planefuse.stack.pyramid import pyramid_depth
 
 
 @dataclass(frozen=True)
@@ -2011,7 +2011,7 @@ def stack_tiled(
     cancel=None,
     masks: FrameSource | None = None,
 ) -> np.ndarray:
-    from focusstack.stack.base import get_algorithm  # local import avoids cycle
+    from planefuse.stack.base import get_algorithm  # local import avoids cycle
 
     probe = source.read(0)
     h, w, c = probe.shape
@@ -2051,7 +2051,7 @@ Expected: all PASS. `test_tiled_matches_untiled` is sensitive to feathering and 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/tiles.py tests/engine/test_tiles.py
+git add engine/src/planefuse/tiles.py tests/engine/test_tiles.py
 git commit -m "feat: tiled stacking with feathered blending and memory estimation"
 ```
 
@@ -2060,7 +2060,7 @@ git commit -m "feat: tiled stacking with feathered blending and memory estimatio
 ### Task 11: Pipeline orchestration with OOM fallback chain
 
 **Files:**
-- Create: `engine/src/focusstack/pipeline.py`
+- Create: `engine/src/planefuse/pipeline.py`
 - Test: `tests/engine/test_pipeline.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -2071,9 +2071,9 @@ git commit -m "feat: tiled stacking with feathered blending and memory estimatio
 import numpy as np
 import pytest
 
-from focusstack.errors import ValidationError
-from focusstack.io import save_image
-from focusstack.pipeline import stack_frames
+from planefuse.errors import ValidationError
+from planefuse.io import save_image
+from planefuse.pipeline import stack_frames
 from tests.synthetic.generate import generate_stack
 
 
@@ -2110,9 +2110,9 @@ def test_forced_tiled_mode_matches_direct(stack_dir):
 - [ ] **Step 2: Run tests to verify failure**
 
 Run: `uv run pytest tests/engine/test_pipeline.py -v`
-Expected: FAIL — `No module named 'focusstack.pipeline'`
+Expected: FAIL — `No module named 'planefuse.pipeline'`
 
-- [ ] **Step 3: Implement `engine/src/focusstack/pipeline.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/pipeline.py`**
 
 ```python
 """Job orchestration: validate -> stack (direct/tiled) -> fallback chain (SPEC §4, §12).
@@ -2128,11 +2128,11 @@ from typing import Any
 
 import torch
 
-from focusstack.backend import Device, empty_cache, free_memory, get_device
-from focusstack.errors import ValidationError
-from focusstack.io import validate_stack
-from focusstack.stack import DirFrameSource, StackResult, get_algorithm
-from focusstack.tiles import estimate_stack_bytes, stack_tiled
+from planefuse.backend import Device, empty_cache, free_memory, get_device
+from planefuse.errors import ValidationError
+from planefuse.io import validate_stack
+from planefuse.stack import DirFrameSource, StackResult, get_algorithm
+from planefuse.tiles import estimate_stack_bytes, stack_tiled
 
 log = logging.getLogger(__name__)
 
@@ -2214,7 +2214,7 @@ Expected: all PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/pipeline.py tests/engine/test_pipeline.py
+git add engine/src/planefuse/pipeline.py tests/engine/test_pipeline.py
 git commit -m "feat: pipeline orchestration with validation and OOM fallback chain"
 ```
 
@@ -2223,7 +2223,7 @@ git commit -m "feat: pipeline orchestration with validation and OOM fallback cha
 ### Task 12: CLI
 
 **Files:**
-- Create: `engine/src/focusstack/cli.py`
+- Create: `engine/src/planefuse/cli.py`
 - Test: `tests/engine/test_cli.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -2235,8 +2235,8 @@ import numpy as np
 from skimage.metrics import structural_similarity
 from typer.testing import CliRunner
 
-from focusstack.cli import app
-from focusstack.io import load_image, save_image
+from planefuse.cli import app
+from planefuse.io import load_image, save_image
 from tests.synthetic.generate import generate_stack
 
 runner = CliRunner()
@@ -2284,18 +2284,18 @@ def test_stack_command_validation_error(tmp_path):
 def test_serve_hint_without_server_package():
     result = runner.invoke(app, ["serve"])
     assert result.exit_code != 0
-    assert "focusstack-server" in _err_text(result)
+    assert "planefuse-server" in _err_text(result)
 ```
 
 - [ ] **Step 2: Run tests to verify failure**
 
 Run: `uv run pytest tests/engine/test_cli.py -v`
-Expected: FAIL — `No module named 'focusstack.cli'`
+Expected: FAIL — `No module named 'planefuse.cli'`
 
-- [ ] **Step 3: Implement `engine/src/focusstack/cli.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/cli.py`**
 
 ```python
-"""FocusStack CLI (SPEC §14 M1). `focusstack stack DIR -o out.tif --method pmax`."""
+"""PlaneFuse CLI (SPEC §14 M1). `planefuse stack DIR -o out.tif --method pmax`."""
 
 from __future__ import annotations
 
@@ -2304,10 +2304,10 @@ from pathlib import Path
 
 import typer
 
-from focusstack.errors import FocusStackError
-from focusstack.io import load_image, save_image
-from focusstack.pipeline import stack_frames
-from focusstack.stack import REGISTRY
+from planefuse.errors import PlaneFuseError
+from planefuse.io import load_image, save_image
+from planefuse.pipeline import stack_frames
+from planefuse.stack import REGISTRY
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
@@ -2351,7 +2351,7 @@ def stack(
             tile=tile_size,
             progress=progress,
         )
-    except FocusStackError as e:
+    except PlaneFuseError as e:
         typer.echo(f"error: {e}", err=True)
         raise typer.Exit(1) from None
     # ICC from the reference (middle) frame, SPEC §5
@@ -2363,13 +2363,13 @@ def stack(
 
 @app.command()
 def serve():
-    """Launch the FocusStack server + web UI (requires the focusstack-server package)."""
+    """Launch the PlaneFuse server + web UI (requires the planefuse-server package)."""
     try:
-        from focusstack_server.main import run  # type: ignore[import-not-found]
+        from planefuse_server.main import run  # type: ignore[import-not-found]
     except ImportError:
         typer.echo(
-            "error: the web UI is not installed. Install the focusstack-server package "
-            "(coming in milestone M4): uv sync (workspace) or pip install focusstack-server",
+            "error: the web UI is not installed. Install the planefuse-server package "
+            "(coming in milestone M4): uv sync (workspace) or pip install planefuse-server",
             err=True,
         )
         raise typer.Exit(1) from None
@@ -2386,8 +2386,8 @@ Expected: all PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/cli.py tests/engine/test_cli.py
-git commit -m "feat: focusstack CLI with stack command and serve stub"
+git add engine/src/planefuse/cli.py tests/engine/test_cli.py
+git commit -m "feat: planefuse CLI with stack command and serve stub"
 ```
 
 ---
@@ -2417,14 +2417,14 @@ Generate a demo stack on disk and run the real CLI binary:
 uv run python -c "
 from pathlib import Path
 from tests.synthetic.generate import generate_stack
-from focusstack.io import save_image
+from planefuse.io import save_image
 d = Path('demo_stack'); d.mkdir(exist_ok=True)
 s = generate_stack(h=1024, w=1536, n_frames=20, max_sigma=6.0, seed=42)
 [save_image(f, d / f'frame_{i:03d}.tif', bit_depth=16) for i, f in enumerate(s.frames)]
 save_image(s.sharp, d / 'ground_truth.tif')
 print('wrote', len(s.frames), 'frames')
 "
-uv run focusstack stack demo_stack -o demo_stack/result_pmax.tif --method pmax
+uv run planefuse stack demo_stack -o demo_stack/result_pmax.tif --method pmax
 ```
 
 Expected: completes without error in seconds on GPU; open `result_pmax.tif` next to `ground_truth.tif` and confirm the result is sharp everywhere. Then delete `demo_stack/` (do not commit it).
@@ -2432,7 +2432,7 @@ Expected: completes without error in seconds on GPU; open `result_pmax.tif` next
 - [ ] **Step 4: Write `README.md`** (quick start per SPEC §16)
 
 ```markdown
-# FocusStack
+# PlaneFuse
 
 Professional GPU-accelerated focus stacking. CUDA (NVIDIA), MPS (Apple silicon), CPU fallback.
 See `docs/SPEC.md` for the full specification.
@@ -2440,7 +2440,7 @@ See `docs/SPEC.md` for the full specification.
 ## Quick start
 
     uv sync --extra cu12x        # NVIDIA (Windows/Linux); --extra cpu without a GPU; plain uv sync on Apple silicon
-    uv run focusstack stack ./my_stack -o result.tif --method pmax
+    uv run planefuse stack ./my_stack -o result.tif --method pmax
 
 ## Status
 

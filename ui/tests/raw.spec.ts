@@ -88,7 +88,7 @@ test('RAW mode stacks without baking and exports Capture One Linear DNG', async 
     'uv',
     [
       'run', '--project', '..', '--extra', 'raw', 'python', '-c',
-      'import sys; from focusstack.io import validate_linear_dng; assert validate_linear_dng(sys.argv[1]).rawpy_validated',
+      'import sys; from planefuse.io import validate_linear_dng; assert validate_linear_dng(sys.argv[1]).rawpy_validated',
       output
     ],
     { stdio: 'inherit' }

@@ -6,8 +6,8 @@ export default {
   kit: {
     adapter: adapter({
       // Emit the built SPA directly into the server's static mount.
-      pages: '../server/src/focusstack_server/static',
-      assets: '../server/src/focusstack_server/static',
+      pages: '../server/src/planefuse_server/static',
+      assets: '../server/src/planefuse_server/static',
       fallback: 'index.html',
       precompress: false,
       strict: false

@@ -1,8 +1,8 @@
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.align.proxy import make_proxy
-from focusstack.align.refine import brightness_gain, refine_ecc
+from planefuse.backend import get_device
+from planefuse.align.proxy import make_proxy
+from planefuse.align.refine import brightness_gain, refine_ecc
 from tests.synthetic.generate import generate_stack
 
 

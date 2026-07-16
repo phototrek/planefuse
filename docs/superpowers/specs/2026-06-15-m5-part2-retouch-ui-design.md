@@ -1,4 +1,4 @@
-# FocusStack M5 Part 2 - Retouch UI Design
+# PlaneFuse M5 Part 2 - Retouch UI Design
 
 **Date:** 2026-06-15
 **Status:** Approved

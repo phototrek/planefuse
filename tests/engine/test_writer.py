@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 import imagecodecs
 
-from focusstack.io import load_image
-from focusstack.io.writer import save_float_tiff, save_image
+from planefuse.io import load_image
+from planefuse.io.writer import save_float_tiff, save_image
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def test_failed_export_never_publishes_partial_destination(tmp_path, img, monkey
     def fail_encode(*_args, **_kwargs):
         raise OSError("simulated encoder failure")
 
-    monkeypatch.setattr("focusstack.io.writer._encode_pixels", fail_encode)
+    monkeypatch.setattr("planefuse.io.writer._encode_pixels", fail_encode)
     with pytest.raises(OSError, match="simulated"):
         save_image(img, out, bit_depth=16)
     assert not out.exists()

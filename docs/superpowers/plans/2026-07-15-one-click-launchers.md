@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Create exactly `Launch FocusStack.command` and `Launch FocusStack.bat` at the repository root.
+- Create exactly `Launch PlaneFuse.command` and `Launch PlaneFuse.bat` at the repository root.
 - Keep `scripts/start-macos.sh`, `scripts/start-windows-gpu.bat`, and `scripts/start-windows-cpu.bat` as the setup/startup authority.
 - Windows must prefer a working NVIDIA `nvidia-smi` path and automatically fall back to CPU.
 - Preserve the delegated launcher's exit status and pause only after a non-zero exit.
@@ -22,8 +22,8 @@
 ### Task 1: Root one-click launchers
 
 **Files:**
-- Create: `Launch FocusStack.command`
-- Create: `Launch FocusStack.bat`
+- Create: `Launch PlaneFuse.command`
+- Create: `Launch PlaneFuse.bat`
 - Modify: `tests/test_distribution.py`
 
 **Interfaces:**
@@ -39,7 +39,7 @@ import os
 
 
 def test_root_macos_launcher_delegates_and_keeps_failures_visible():
-    launcher = ROOT / "Launch FocusStack.command"
+    launcher = ROOT / "Launch PlaneFuse.command"
     text = launcher.read_text()
     assert os.access(launcher, os.X_OK)
     assert 'scripts/start-macos.sh' in text
@@ -49,14 +49,14 @@ def test_root_macos_launcher_delegates_and_keeps_failures_visible():
 
 
 def test_root_windows_launcher_prefers_gpu_and_falls_back_to_cpu():
-    text = (ROOT / "Launch FocusStack.bat").read_text().lower()
+    text = (ROOT / "Launch PlaneFuse.bat").read_text().lower()
     probe = text.index("nvidia-smi")
     gpu = text.index("scripts\\start-windows-gpu.bat")
     cpu = text.index("scripts\\start-windows-cpu.bat")
     assert probe < gpu < cpu
     assert "if errorlevel 1 goto cpu" in text
     assert "pause" in text
-    assert "exit /b %focusstack_exit%" in text
+    assert "exit /b %planefuse_exit%" in text
 ```
 
 - [ ] **Step 2: Run the tests and verify the missing-file failure**
@@ -71,7 +71,7 @@ Expected: both tests fail with `FileNotFoundError` for the two root launchers.
 
 - [ ] **Step 3: Implement the macOS wrapper**
 
-Create `Launch FocusStack.command`:
+Create `Launch PlaneFuse.command`:
 
 ```bash
 #!/usr/bin/env bash
@@ -82,7 +82,7 @@ status=0
 scripts/start-macos.sh || status=$?
 if [ "$status" -ne 0 ]; then
   echo
-  echo "FocusStack could not start (exit code $status)."
+  echo "PlaneFuse could not start (exit code $status)."
   read -r -p "Press Return to close this window…" _
 fi
 exit "$status"
@@ -91,12 +91,12 @@ exit "$status"
 Then set the executable bit:
 
 ```bash
-chmod +x "Launch FocusStack.command"
+chmod +x "Launch PlaneFuse.command"
 ```
 
 - [ ] **Step 4: Implement the Windows GPU-first wrapper**
 
-Create `Launch FocusStack.bat`:
+Create `Launch PlaneFuse.bat`:
 
 ```bat
 @echo off
@@ -108,22 +108,22 @@ if errorlevel 1 goto cpu
 nvidia-smi >nul 2>nul
 if errorlevel 1 goto cpu
 
-echo Starting FocusStack with the NVIDIA GPU...
+echo Starting PlaneFuse with the NVIDIA GPU...
 call "scripts\start-windows-gpu.bat"
 goto done
 
 :cpu
-echo No working NVIDIA GPU was detected. Starting FocusStack on CPU...
+echo No working NVIDIA GPU was detected. Starting PlaneFuse on CPU...
 call "scripts\start-windows-cpu.bat"
 
 :done
-set "focusstack_exit=%errorlevel%"
-if not "%focusstack_exit%"=="0" (
+set "planefuse_exit=%errorlevel%"
+if not "%planefuse_exit%"=="0" (
   echo.
-  echo FocusStack could not start ^(exit code %focusstack_exit%^).
+  echo PlaneFuse could not start ^(exit code %planefuse_exit%^).
   pause
 )
-exit /b %focusstack_exit%
+exit /b %planefuse_exit%
 ```
 
 - [ ] **Step 5: Run launcher contract and distribution tests**
@@ -141,8 +141,8 @@ Expected: all tests in `tests/test_distribution.py` pass.
 Run:
 
 ```bash
-bash -n "Launch FocusStack.command"
-test -x "Launch FocusStack.command"
+bash -n "Launch PlaneFuse.command"
+test -x "Launch PlaneFuse.command"
 git diff --check
 ```
 
@@ -151,7 +151,7 @@ Expected: all commands exit 0. Review the batch labels, `call` targets, and exit
 - [ ] **Step 7: Commit the launchers**
 
 ```bash
-git add "Launch FocusStack.command" "Launch FocusStack.bat" tests/test_distribution.py
+git add "Launch PlaneFuse.command" "Launch PlaneFuse.bat" tests/test_distribution.py
 git commit -m "feat: add one-click platform launchers"
 ```
 
@@ -177,8 +177,8 @@ Append to `tests/test_distribution.py`:
 def test_docs_advertise_both_root_one_click_launchers():
     for document in (ROOT / "README.md", ROOT / "docs/INSTALL.md"):
         text = document.read_text()
-        assert "Launch FocusStack.command" in text
-        assert "Launch FocusStack.bat" in text
+        assert "Launch PlaneFuse.command" in text
+        assert "Launch PlaneFuse.bat" in text
     install = (ROOT / "docs/INSTALL.md").read_text()
     assert "NVIDIA" in install
     assert "fall" in install.lower() and "CPU" in install
@@ -201,8 +201,8 @@ Insert before the command-line setup in `README.md`:
 ```markdown
 ### One click
 
-- **macOS:** double-click `Launch FocusStack.command`.
-- **Windows:** double-click `Launch FocusStack.bat`; it prefers NVIDIA GPU and
+- **macOS:** double-click `Launch PlaneFuse.command`.
+- **Windows:** double-click `Launch PlaneFuse.bat`; it prefers NVIDIA GPU and
   automatically falls back to CPU.
 
 The first launch performs the locked setup and builds the interface. Keep the
@@ -218,8 +218,8 @@ Replace the opening of the launcher section in `docs/INSTALL.md` with:
 ```markdown
 ## One-click launchers
 
-- On macOS, double-click `Launch FocusStack.command` in Finder.
-- On Windows, double-click `Launch FocusStack.bat` in Explorer. A working NVIDIA
+- On macOS, double-click `Launch PlaneFuse.command` in Finder.
+- On Windows, double-click `Launch PlaneFuse.bat` in Explorer. A working NVIDIA
   driver selects the GPU launcher by default; otherwise it falls back to CPU.
 
 The root launchers delegate to the scripts in [scripts](../scripts), which check

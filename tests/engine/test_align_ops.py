@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import torch
 
-from focusstack.backend import ops
+from planefuse.backend import ops
 
 
 def _rand_img(c=3, h=64, w=80, seed=0):

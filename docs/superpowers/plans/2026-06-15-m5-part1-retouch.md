@@ -1,12 +1,12 @@
-# FocusStack M5 Part 1 — Retouch Engine + Server Implementation Plan
+# PlaneFuse M5 Part 1 — Retouch Engine + Server Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers-extended-cc:subagent-driven-development (if subagents available) or superpowers-extended-cc:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement server-side retouch compositing (SPEC §11) — a session paints one stacked result into another with undo/redo/flatten, all over HTTP — covered by engine + server tests including undo/redo determinism.
 
-**Architecture:** A pure-numpy engine module `focusstack.retouch` (zero server imports) owns brush rasterization and the deterministic `RetouchSession` (maintained composite + checkpoints every 20 strokes). The server adds a `RetouchManager` that persists sessions in `project.json`, rehydrates by replay, rebuilds only the dirty tiles of a working-image pyramid (reusing the viewer tile route), and exposes the retouch REST routes. No UI here (M5 Part 2).
+**Architecture:** A pure-numpy engine module `planefuse.retouch` (zero server imports) owns brush rasterization and the deterministic `RetouchSession` (maintained composite + checkpoints every 20 strokes). The server adds a `RetouchManager` that persists sessions in `project.json`, rehydrates by replay, rebuilds only the dirty tiles of a working-image pyramid (reusing the viewer tile route), and exposes the retouch REST routes. No UI here (M5 Part 2).
 
-**Tech Stack:** Python 3.12, numpy, Pillow (tiles), FastAPI + httpx TestClient, the existing `focusstack`/`focusstack-server` packages, uv, pytest, ruff, mypy.
+**Tech Stack:** Python 3.12, numpy, Pillow (tiles), FastAPI + httpx TestClient, the existing `planefuse`/`planefuse-server` packages, uv, pytest, ruff, mypy.
 
 **Read first:** `docs/superpowers/specs/2026-06-15-m5-retouch-design.md` (the approved design — spec wins on conflict; flag conflicts rather than deviating). SPEC §2 (engine-has-zero-server-imports hard rule), §7.1 (unclamped float32 until export), §9/§11 (retouch API + behavior), §13.2 (undo/redo determinism), §14 (M5).
 
@@ -20,11 +20,11 @@
 
 **Module layout:**
 ```
-engine/src/focusstack/retouch/
+engine/src/planefuse/retouch/
   __init__.py          # exports Stroke, stroke_mask, RetouchSession
   brush.py             # Stroke dataclass + stroke_mask (gaussian dabs -> cropped mask + bbox)
   session.py           # RetouchSession (apply/undo/redo, checkpoints, determinism)
-server/src/focusstack_server/
+server/src/planefuse_server/
   tiles.py             # + rebuild_region + shared tile-writing helper (refactor build_pyramid)
   retouch.py           # RetouchManager (persistence, rehydrate, tile rebuild, flatten)
   api/retouch.py       # routes
@@ -44,7 +44,7 @@ tests/server/test_retouch_api.py
 
 **Files:**
 - Create: branch `feat/m5-retouch`
-- Create: `engine/src/focusstack/retouch/__init__.py`, `engine/src/focusstack/retouch/brush.py`
+- Create: `engine/src/planefuse/retouch/__init__.py`, `engine/src/planefuse/retouch/brush.py`
 - Test: `tests/engine/test_retouch_brush.py`
 
 - [ ] **Step 1: Branch**
@@ -58,7 +58,7 @@ git checkout -b feat/m5-retouch
 ```python
 import numpy as np
 
-from focusstack.retouch.brush import Stroke, stroke_mask
+from planefuse.retouch.brush import Stroke, stroke_mask
 
 
 def _stroke(**kw):
@@ -110,7 +110,7 @@ def test_pressure_scales_strength():
 
 - [ ] **Step 3: Run to verify failure** — `uv run pytest tests/engine/test_retouch_brush.py -q` → FAIL (module missing).
 
-- [ ] **Step 4: Implement** `engine/src/focusstack/retouch/brush.py`:
+- [ ] **Step 4: Implement** `engine/src/planefuse/retouch/brush.py`:
 
 ```python
 """Brush stroke rasterization (SPEC §11). Pure numpy, deterministic."""
@@ -192,13 +192,13 @@ def stroke_mask(h: int, w: int, stroke: Stroke):
     return mask, (y0, x0, y1, x1)
 ```
 
-`engine/src/focusstack/retouch/__init__.py`:
+`engine/src/planefuse/retouch/__init__.py`:
 
 ```python
 """Retouch stroke-compositing engine (SPEC §11)."""
 
-from focusstack.retouch.brush import EMPTY_BBOX, Stroke, stroke_mask
-from focusstack.retouch.session import RetouchSession
+from planefuse.retouch.brush import EMPTY_BBOX, Stroke, stroke_mask
+from planefuse.retouch.session import RetouchSession
 
 __all__ = ["EMPTY_BBOX", "Stroke", "stroke_mask", "RetouchSession"]
 ```
@@ -210,9 +210,9 @@ Note: `__init__` imports `RetouchSession` (built in Task 2). To keep Task 1 impo
 - [ ] **Step 6: ruff + mypy + commit**
 
 ```bash
-uv run ruff check engine/src/focusstack/retouch tests/engine/test_retouch_brush.py
+uv run ruff check engine/src/planefuse/retouch tests/engine/test_retouch_brush.py
 uv run mypy engine/src
-git add engine/src/focusstack/retouch tests/engine/test_retouch_brush.py
+git add engine/src/planefuse/retouch tests/engine/test_retouch_brush.py
 git commit -m "feat: retouch brush stroke rasterization (gaussian dabs)"
 ```
 
@@ -221,8 +221,8 @@ git commit -m "feat: retouch brush stroke rasterization (gaussian dabs)"
 ### Task 2: `RetouchSession` (apply / undo / redo / checkpoints)
 
 **Files:**
-- Create: `engine/src/focusstack/retouch/session.py`
-- Modify: `engine/src/focusstack/retouch/__init__.py` (add session import)
+- Create: `engine/src/planefuse/retouch/session.py`
+- Modify: `engine/src/planefuse/retouch/__init__.py` (add session import)
 - Test: `tests/engine/test_retouch_session.py`
 
 - [ ] **Step 1: Write the failing tests** — `tests/engine/test_retouch_session.py`:
@@ -230,7 +230,7 @@ git commit -m "feat: retouch brush stroke rasterization (gaussian dabs)"
 ```python
 import numpy as np
 
-from focusstack.retouch import RetouchSession, Stroke
+from planefuse.retouch import RetouchSession, Stroke
 
 
 def _session():
@@ -302,7 +302,7 @@ def test_undo_to_middle_equals_fresh_replay():
 
 - [ ] **Step 2: Run to verify failure** — FAIL (no `RetouchSession`).
 
-- [ ] **Step 3: Implement** `engine/src/focusstack/retouch/session.py`:
+- [ ] **Step 3: Implement** `engine/src/planefuse/retouch/session.py`:
 
 ```python
 """Deterministic retouch session: maintained composite + checkpoints (SPEC §11)."""
@@ -311,7 +311,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from focusstack.retouch.brush import EMPTY_BBOX, Stroke, stroke_mask
+from planefuse.retouch.brush import EMPTY_BBOX, Stroke, stroke_mask
 
 CHECKPOINT_EVERY = 20
 
@@ -383,9 +383,9 @@ Then update `__init__.py` to import `RetouchSession` (as shown in Task 1).
 - [ ] **Step 5: ruff + mypy + commit**
 
 ```bash
-uv run ruff check engine/src/focusstack/retouch tests/engine/test_retouch_session.py
+uv run ruff check engine/src/planefuse/retouch tests/engine/test_retouch_session.py
 uv run mypy engine/src
-git add engine/src/focusstack/retouch tests/engine/test_retouch_session.py
+git add engine/src/planefuse/retouch tests/engine/test_retouch_session.py
 git commit -m "feat: deterministic RetouchSession with checkpoints and undo/redo"
 ```
 
@@ -396,7 +396,7 @@ git commit -m "feat: deterministic RetouchSession with checkpoints and undo/redo
 ### Task 3: Tile `rebuild_region` + shared helper
 
 **Files:**
-- Modify: `server/src/focusstack_server/tiles.py`
+- Modify: `server/src/planefuse_server/tiles.py`
 - Test: `tests/server/test_tiles_rebuild.py`
 
 - [ ] **Step 1: Write the failing tests** — `tests/server/test_tiles_rebuild.py`:
@@ -404,7 +404,7 @@ git commit -m "feat: deterministic RetouchSession with checkpoints and undo/redo
 ```python
 import numpy as np
 
-from focusstack_server.tiles import build_pyramid, rebuild_region, tile_path
+from planefuse_server.tiles import build_pyramid, rebuild_region, tile_path
 
 
 def test_rebuild_region_changes_only_dirty_tiles(tmp_path):
@@ -531,9 +531,9 @@ def tile_path(tiles_root: Path, image_id: str, z: int, x: int, y: int) -> Path:
 - [ ] **Step 5: ruff/mypy + commit**
 
 ```bash
-uv run ruff check server/src/focusstack_server/tiles.py tests/server/test_tiles_rebuild.py
+uv run ruff check server/src/planefuse_server/tiles.py tests/server/test_tiles_rebuild.py
 uv run mypy server/src
-git add server/src/focusstack_server/tiles.py tests/server/test_tiles_rebuild.py
+git add server/src/planefuse_server/tiles.py tests/server/test_tiles_rebuild.py
 git commit -m "feat: rebuild_region for partial tile updates; factor tile helpers"
 ```
 
@@ -542,8 +542,8 @@ git commit -m "feat: rebuild_region for partial tile updates; factor tile helper
 ### Task 4: `Project.retouch` field + `RetouchManager`
 
 **Files:**
-- Modify: `server/src/focusstack_server/projects.py` (add `retouch` field)
-- Create: `server/src/focusstack_server/retouch.py`
+- Modify: `server/src/planefuse_server/projects.py` (add `retouch` field)
+- Create: `server/src/planefuse_server/retouch.py`
 - Test: `tests/server/test_retouch_manager.py`
 
 - [ ] **Step 1: Add the `retouch` field to `Project`** in `projects.py`:
@@ -556,9 +556,9 @@ git commit -m "feat: rebuild_region for partial tile updates; factor tile helper
 ```python
 import numpy as np
 
-from focusstack.io import save_image
-from focusstack_server.projects import ProjectStore
-from focusstack_server.retouch import RetouchManager
+from planefuse.io import save_image
+from planefuse_server.projects import ProjectStore
+from planefuse_server.retouch import RetouchManager
 
 
 def _project_with_two_results(tmp_path):
@@ -586,7 +586,7 @@ def test_create_session_lists_sources_and_builds_working(tmp_path):
     assert "session_id" in out and "working_image_id" in out
     assert any(s["image_id"] == "res_source" for s in out["sources"])
     # working pyramid exists
-    from focusstack_server.tiles import tile_path
+    from planefuse_server.tiles import tile_path
     wid = out["working_image_id"]
     assert tile_path(proj.cache / "tiles", wid, 0, 0, 0).exists()
 
@@ -614,7 +614,7 @@ def test_undo_redo_flatten_determinism(tmp_path):
     mgr.redo(sid)
     id_b = mgr.flatten(sid, "B")["image_id"]
 
-    from focusstack.io import load_image
+    from planefuse.io import load_image
     proj2 = ProjectStore(tmp_path / "data").get(proj.id)
     a = load_image(proj2.images[id_a]["path"]).pixels
     b = load_image(proj2.images[id_b]["path"]).pixels
@@ -642,7 +642,7 @@ def test_unknown_session_raises_lookup(tmp_path):
 
 - [ ] **Step 3: Run to verify failure** — FAIL (no `retouch` module).
 
-- [ ] **Step 4: Implement** `server/src/focusstack_server/retouch.py`:
+- [ ] **Step 4: Implement** `server/src/planefuse_server/retouch.py`:
 
 ```python
 """Retouch session manager (SPEC §11): persistence, rehydrate, tile rebuild."""
@@ -654,10 +654,10 @@ from pathlib import Path
 
 import numpy as np
 
-from focusstack.io import load_image, save_image
-from focusstack.retouch import RetouchSession, Stroke
-from focusstack_server.projects import Project, ProjectStore
-from focusstack_server.tiles import build_pyramid, rebuild_region
+from planefuse.io import load_image, save_image
+from planefuse.retouch import RetouchSession, Stroke
+from planefuse_server.projects import Project, ProjectStore
+from planefuse_server.tiles import build_pyramid, rebuild_region
 
 
 def _stroke_from_dict(d: dict) -> Stroke:
@@ -799,9 +799,9 @@ Note: `stroke` records the exact incoming client dict; `undo`/`redo` go through 
 - [ ] **Step 6: ruff/mypy + commit**
 
 ```bash
-uv run ruff check server/src/focusstack_server/retouch.py server/src/focusstack_server/projects.py tests/server/test_retouch_manager.py
+uv run ruff check server/src/planefuse_server/retouch.py server/src/planefuse_server/projects.py tests/server/test_retouch_manager.py
 uv run mypy server/src
-git add server/src/focusstack_server/retouch.py server/src/focusstack_server/projects.py tests/server/test_retouch_manager.py
+git add server/src/planefuse_server/retouch.py server/src/planefuse_server/projects.py tests/server/test_retouch_manager.py
 git commit -m "feat: RetouchManager — sessions, persistence, rehydrate, flatten"
 ```
 
@@ -810,9 +810,9 @@ git commit -m "feat: RetouchManager — sessions, persistence, rehydrate, flatte
 ### Task 5: Retouch routes + wiring + export guard; finish
 
 **Files:**
-- Create: `server/src/focusstack_server/api/retouch.py`
-- Modify: `server/src/focusstack_server/main.py` (app-scoped manager + include router)
-- Modify: `server/src/focusstack_server/runners.py` (export guard)
+- Create: `server/src/planefuse_server/api/retouch.py`
+- Modify: `server/src/planefuse_server/main.py` (app-scoped manager + include router)
+- Modify: `server/src/planefuse_server/runners.py` (export guard)
 - Test: `tests/server/test_retouch_api.py`
 - Modify: `README.md`
 
@@ -822,8 +822,8 @@ git commit -m "feat: RetouchManager — sessions, persistence, rehydrate, flatte
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.io import save_image
-from focusstack_server.main import create_app
+from planefuse.io import save_image
+from planefuse_server.main import create_app
 
 
 def _client_with_results(tmp_path):
@@ -873,7 +873,7 @@ Flesh out `test_retouch_lifecycle_and_determinism` using the stack-job helper (r
 
 - [ ] **Step 2: Run to verify failure** — FAIL (no routes).
 
-- [ ] **Step 3: Implement** `server/src/focusstack_server/api/retouch.py`:
+- [ ] **Step 3: Implement** `server/src/planefuse_server/api/retouch.py`:
 
 ```python
 """Retouch session routes (SPEC §9, §11)."""
@@ -958,10 +958,10 @@ def flatten(sid: str, body: FlattenBody, request: Request) -> JSONResponse:
 In `main.py` `create_app`: after the job queue setup, add:
 
 ```python
-    from focusstack_server.retouch import RetouchManager
+    from planefuse_server.retouch import RetouchManager
     app.state.retouch = RetouchManager(data_dir)
 ```
-and `from focusstack_server.api import retouch` + `app.include_router(retouch.router)` (before the SPA catch-all mount).
+and `from planefuse_server.api import retouch` + `app.include_router(retouch.router)` (before the SPA catch-all mount).
 
 In `runners.py` `make_export_runner.run`, replace the `if info is None` guard:
 
@@ -988,7 +988,7 @@ Fix any issues.
 Update `README.md` status: `- [~] M5 — retouch engine + server done; retouch UI (Part 2) pending`.
 
 ```bash
-git add server/src/focusstack_server/api/retouch.py server/src/focusstack_server/main.py server/src/focusstack_server/runners.py tests/server/test_retouch_api.py README.md
+git add server/src/planefuse_server/api/retouch.py server/src/planefuse_server/main.py server/src/planefuse_server/runners.py tests/server/test_retouch_api.py README.md
 git commit -m "feat: retouch REST routes, app-scoped manager, export guard; M5 Part 1 done"
 ```
 

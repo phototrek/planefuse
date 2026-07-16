@@ -6,7 +6,7 @@ import tempfile
 
 import uvicorn
 
-from focusstack_server.main import create_app
+from planefuse_server.main import create_app
 
 app = create_app(pathlib.Path(tempfile.mkdtemp(prefix="fs-e2e-")))
 

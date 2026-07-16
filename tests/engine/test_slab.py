@@ -1,10 +1,10 @@
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from focusstack.backend import get_device
-from focusstack.stack.base import get_algorithm
-from focusstack.stack.slab import plan_slabs
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.stack.base import get_algorithm
+from planefuse.stack.slab import plan_slabs
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 
@@ -20,7 +20,7 @@ def test_plan_slabs_overlap():
 
 
 def test_slab_registered_and_recovers_sharp():
-    from focusstack.stack import REGISTRY
+    from planefuse.stack import REGISTRY
     assert "slab" in REGISTRY
     stack = generate_stack(h=120, w=150, n_frames=16, max_sigma=4.0, seed=62)
     src = ArrayFrameSource(stack.frames)

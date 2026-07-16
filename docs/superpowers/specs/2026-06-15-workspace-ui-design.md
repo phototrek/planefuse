@@ -1,4 +1,4 @@
-# FocusStack Single-Screen Workspace — Design Spec
+# PlaneFuse Single-Screen Workspace — Design Spec
 
 **Date:** 2026-06-15
 **Status:** ✅ Approved by spec-document-reviewer (pass 2); pending user spec review
@@ -48,7 +48,7 @@ bottom render drawer (collapsible). Toolbar spans the top.
 
 The server stays project-centric; we make a project effortless to obtain and add
 the frame-management verbs the additive UI needs. All changes are in
-`server/src/focusstack_server/`.
+`server/src/planefuse_server/`.
 
 ### 4.1 Scratch project
 - `ProjectStore.create(directory, name)` accepts `directory=None` → server creates

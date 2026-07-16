@@ -1,7 +1,7 @@
 import numpy as np
 import tifffile
 
-from focusstack.io.writer import save_image
+from planefuse.io.writer import save_image
 
 
 def test_depth_map_16bit_tiff_roundtrip(tmp_path):

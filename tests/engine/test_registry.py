@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from focusstack.io import save_image
-from focusstack.stack.base import REGISTRY, ParamSpec, StackResult, get_algorithm, register
-from focusstack.stack.sources import ArrayFrameSource, DirFrameSource
+from planefuse.io import save_image
+from planefuse.stack.base import REGISTRY, ParamSpec, StackResult, get_algorithm, register
+from planefuse.stack.sources import ArrayFrameSource, DirFrameSource
 
 
 def test_register_and_lookup():

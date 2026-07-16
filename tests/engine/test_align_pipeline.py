@@ -1,9 +1,9 @@
 import numpy as np
 
-from focusstack.align.estimate import PairResult
-from focusstack.backend import get_device
-from focusstack.align import AlignParams, align_stack
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.align.estimate import PairResult
+from planefuse.backend import get_device
+from planefuse.align import AlignParams, align_stack
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 
@@ -60,7 +60,7 @@ def test_unrecoverable_direct_alignment_stays_flagged_until_drop(tmp_path, monke
         correlation = 0.2 if pair_values in {(0.0, 0.5), (0.5, 0.0)} else 0.99
         return PairResult(np.eye(3), correlation, 1.0, 1.0)
 
-    monkeypatch.setattr("focusstack.align.pipeline.estimate_pair", fake_estimate)
+    monkeypatch.setattr("planefuse.align.pipeline.estimate_pair", fake_estimate)
 
     kept = align_stack(
         src,

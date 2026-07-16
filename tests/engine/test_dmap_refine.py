@@ -1,7 +1,7 @@
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.stack.dmap import refine_index
+from planefuse.backend import get_device
+from planefuse.stack.dmap import refine_index
 
 
 def test_refine_smooths_and_fills_undecided():

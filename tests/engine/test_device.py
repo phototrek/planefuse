@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from focusstack.backend import free_memory, get_device
-from focusstack.errors import BackendError
+from planefuse.backend import free_memory, get_device
+from planefuse.errors import BackendError
 
 
 def test_cpu_device_always_available():
@@ -18,20 +18,20 @@ def test_auto_returns_a_device():
 
 
 def test_environment_preference_controls_auto(monkeypatch):
-    monkeypatch.setenv("FOCUSSTACK_DEVICE", "cpu")
+    monkeypatch.setenv("PLANEFUSE_DEVICE", "cpu")
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     assert get_device("auto").kind == "cpu"
 
 
 def test_explicit_preference_ignores_environment(monkeypatch):
-    monkeypatch.setenv("FOCUSSTACK_DEVICE", "cpu")
+    monkeypatch.setenv("PLANEFUSE_DEVICE", "cpu")
     monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
     assert get_device("mps").kind == "mps"
 
 
 def test_invalid_environment_preference_raises_for_auto(monkeypatch):
-    monkeypatch.setenv("FOCUSSTACK_DEVICE", "tpu")
-    with pytest.raises(ValueError, match="FOCUSSTACK_DEVICE"):
+    monkeypatch.setenv("PLANEFUSE_DEVICE", "tpu")
+    with pytest.raises(ValueError, match="PLANEFUSE_DEVICE"):
         get_device("auto")
 
 

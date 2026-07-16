@@ -3,8 +3,8 @@ import time
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.io import save_image
-from focusstack_server.main import create_app
+from planefuse.io import save_image
+from planefuse_server.main import create_app
 from tests.engine.test_raw_loader import write_test_raw
 
 
@@ -78,7 +78,7 @@ def test_raw_stack_persists_domain_metadata_decoder_and_provenance(tmp_path):
     proj = c.get(f"/api/projects/{pid}").json()
     result = next(img for img in proj["images"].values() if img.get("kind") == "result")
     assert result["domain"] == "scene_linear_camera_rgb"
-    assert result["metadata"]["unique_camera_model"] == "FocusStack Camera Co SameCam Pro"
+    assert result["metadata"]["unique_camera_model"] == "PlaneFuse Camera Co SameCam Pro"
     assert result["decoder"]["auto_brightness"] is False
     assert len(result["provenance"]["sources"]) == 2
     assert all("sha256" in source for source in result["provenance"]["sources"])

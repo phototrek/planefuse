@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from focusstack.io import ImageMetadata, load_image, save_image
+from planefuse.io import ImageMetadata, load_image, save_image
 
 
 @pytest.mark.parametrize(
@@ -14,14 +14,14 @@ def test_rendered_export_roundtrips_portable_metadata(tmp_path: Path, suffix: st
     pixels = np.linspace(0.05, 0.95, 18 * 24 * 3, dtype=np.float32).reshape(18, 24, 3)
     metadata = ImageMetadata(
         source_path=tmp_path / "source.nef",
-        icc=b"\x00\x00\x02\x00focusstack-test-icc",
+        icc=b"\x00\x00\x02\x00planefuse-test-icc",
         exif={
-            "Exif.Image.Make": "FocusStack Camera Co",
+            "Exif.Image.Make": "PlaneFuse Camera Co",
             "Exif.Image.Model": "SameCam Pro",
             "Exif.Photo.SubjectDistance": "1/2",
         },
         xmp={
-            "Xmp.dc.creator": "FocusStack Test",
+            "Xmp.dc.creator": "PlaneFuse Test",
             "Xmp.aux.ApproximateFocusDistance": "0.5",
         },
     )
@@ -31,9 +31,9 @@ def test_rendered_export_roundtrips_portable_metadata(tmp_path: Path, suffix: st
     reopened = load_image(out)
 
     assert reopened.metadata.icc == metadata.icc
-    assert reopened.metadata.exif["Exif.Image.Make"] == "FocusStack Camera Co"
+    assert reopened.metadata.exif["Exif.Image.Make"] == "PlaneFuse Camera Co"
     assert reopened.metadata.exif["Exif.Image.Model"] == "SameCam Pro"
-    assert reopened.metadata.xmp["Xmp.dc.creator"] == "FocusStack Test"
+    assert reopened.metadata.xmp["Xmp.dc.creator"] == "PlaneFuse Test"
     assert "Exif.Photo.SubjectDistance" not in reopened.metadata.exif
     assert "Xmp.aux.ApproximateFocusDistance" not in reopened.metadata.xmp
-    assert reopened.metadata.xmp["Xmp.FocusStack.Provenance"]
+    assert reopened.metadata.xmp["Xmp.PlaneFuse.Provenance"]

@@ -1,5 +1,5 @@
 {
-  "name": "focusstack-ui",
+  "name": "planefuse-ui",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -15,7 +15,7 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test:e2e": "playwright test",
-    "test:e2e:mps": "FOCUSSTACK_E2E_DEVICE=mps playwright test"
+    "test:e2e:mps": "PLANEFUSE_E2E_DEVICE=mps playwright test"
   },
   "devDependencies": {
     "@fontsource/archivo": "^5.0.0",

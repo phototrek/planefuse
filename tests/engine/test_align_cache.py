@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from focusstack.align.cache import AlignedCache
-from focusstack.errors import ValidationError
-from focusstack.io import ImageMetadata, ProcessingDomain
+from planefuse.align.cache import AlignedCache
+from planefuse.errors import ValidationError
+from planefuse.io import ImageMetadata, ProcessingDomain
 
 
 def test_cache_roundtrip_frame_and_mask(tmp_path):

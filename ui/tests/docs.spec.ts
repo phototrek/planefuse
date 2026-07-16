@@ -4,10 +4,10 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-test.skip(process.env.FOCUSSTACK_DOCS_CAPTURE !== '1', 'documentation screenshot capture only');
+test.skip(process.env.PLANEFUSE_DOCS_CAPTURE !== '1', 'documentation screenshot capture only');
 
 test('capture the no-bake RAW workspace documentation', async ({ page }) => {
-  const work = mkdtempSync(join(tmpdir(), 'focusstack-docs-'));
+  const work = mkdtempSync(join(tmpdir(), 'planefuse-docs-'));
   const frames = join(work, 'same-camera-raw');
   const assets = join('..', 'docs', 'assets');
   mkdirSync(assets, { recursive: true });

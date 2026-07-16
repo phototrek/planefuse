@@ -34,7 +34,7 @@ jobs:
 
       - name: Pytest (CPU device)
         env:
-          FOCUSSTACK_DEVICE: cpu
+          PLANEFUSE_DEVICE: cpu
         run: uv run --frozen --extra cpu --extra raw pytest -q
 
       - name: Python dependency audit
@@ -71,14 +71,14 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build CPU image
-        run: docker build --target cpu -t focusstack:cpu .
+        run: docker build --target cpu -t planefuse:cpu .
 
       - name: Validate CUDA Compose security/configuration
         run: docker compose config --quiet
 
       - name: Run and health-check /api/system
         run: |
-          docker run -d --name fs -p 127.0.0.1:8425:8425 focusstack:cpu
+          docker run -d --name fs -p 127.0.0.1:8425:8425 planefuse:cpu
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8425/api/system >/dev/null; then
               echo "healthy"; docker rm -f fs; exit 0

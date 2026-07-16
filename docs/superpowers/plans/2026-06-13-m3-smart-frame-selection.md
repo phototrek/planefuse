@@ -1,10 +1,10 @@
-# FocusStack M3 (Part 2) — Smart Frame Selection Implementation Plan
+# PlaneFuse M3 (Part 2) — Smart Frame Selection Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers-extended-cc:subagent-driven-development (if subagents available) or superpowers-extended-cc:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement the §7.0 smart frame-selection (stack-thinning) pre-stacking stage — grid focus measures, curve smoothing, kurtosis reliability classification, per-cell in-focus intervals with peak-set augmentation, and exact interval-stabbing set cover — exposed via `--select-frames`/`--focus-tolerance`, with a kurtosis calibration script and the §13.2 coverage test, completing milestone M3.
 
-**Architecture:** A new `focusstack.select` package that operates on low-res luminance proxies of the (already aligned/surviving) frames and returns a `SelectionResult` (kept/redundant frame indices + per-cell coverage data). It is a pure analysis pass over a streamed `FrameSource` (+ optional validity `masks=`), off by default, run before any §7.1–7.4 stacking algorithm. `stack_frames` gains a `select` stage that, when enabled, computes the proposal and stacks only the kept subset (via an index-subset `FrameSource` view). No stacking algorithm changes.
+**Architecture:** A new `planefuse.select` package that operates on low-res luminance proxies of the (already aligned/surviving) frames and returns a `SelectionResult` (kept/redundant frame indices + per-cell coverage data). It is a pure analysis pass over a streamed `FrameSource` (+ optional validity `masks=`), off by default, run before any §7.1–7.4 stacking algorithm. `stack_frames` gains a `select` stage that, when enabled, computes the proposal and stacks only the kept subset (via an index-subset `FrameSource` view). No stacking algorithm changes.
 
 **Tech Stack:** Python 3.12, PyTorch 2.x (focus measures / proxy on-device), numpy (set-cover math), typer, pytest, scikit-image (tests only), uv.
 
@@ -20,7 +20,7 @@
 - Tests CPU-first; this machine is CPU-only (accelerator parity auto-skips — expected).
 - Branch: `feat/m3-frame-selection` off `main`.
 
-**Module layout (new `engine/src/focusstack/select/`):**
+**Module layout (new `engine/src/planefuse/select/`):**
 - `__init__.py` — exports `SelectParams`, `SelectionResult`, `select_frames`.
 - `focus_measure.py` — grid focus measures over proxies (§7.0 step 1).
 - `reliability.py` — curve smoothing (step 2) + kurtosis reliability (step 3).
@@ -44,8 +44,8 @@
 ### Task 1: Grid focus measures
 
 **Files:**
-- Create: `engine/src/focusstack/select/__init__.py` (stub: module docstring only for now)
-- Create: `engine/src/focusstack/select/focus_measure.py`
+- Create: `engine/src/planefuse/select/__init__.py` (stub: module docstring only for now)
+- Create: `engine/src/planefuse/select/focus_measure.py`
 - Test: `tests/engine/test_focus_measure.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -55,9 +55,9 @@
 ```python
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.select.focus_measure import compute_focus_measures
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.select.focus_measure import compute_focus_measures
+from planefuse.stack.sources import ArrayFrameSource
 
 
 def test_focus_measures_shape_and_sharper_frame_scores_higher():
@@ -98,17 +98,17 @@ def test_focus_measures_mask_marks_cells_unreliable():
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_focus_measure.py -v`
-Expected: FAIL — `No module named 'focusstack.select'`.
+Expected: FAIL — `No module named 'planefuse.select'`.
 
 - [ ] **Step 3: Implement**
 
-`engine/src/focusstack/select/__init__.py`:
+`engine/src/planefuse/select/__init__.py`:
 
 ```python
 """Smart frame selection / stack thinning (SPEC §7.0)."""
 ```
 
-`engine/src/focusstack/select/focus_measure.py`:
+`engine/src/planefuse/select/focus_measure.py`:
 
 ```python
 """Grid focus measures for frame selection (SPEC §7.0 step 1).
@@ -124,8 +124,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from focusstack.backend import Device, ops
-from focusstack.stack.base import FrameSource
+from planefuse.backend import Device, ops
+from planefuse.stack.base import FrameSource
 
 _MAX_INVALID_FRACTION = 0.25
 
@@ -193,7 +193,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/select tests/engine/test_focus_measure.py
+git add engine/src/planefuse/select tests/engine/test_focus_measure.py
 git commit -m "feat: grid focus measures for frame selection"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -205,7 +205,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ### Task 2: Curve smoothing + kurtosis reliability
 
 **Files:**
-- Create: `engine/src/focusstack/select/reliability.py`
+- Create: `engine/src/planefuse/select/reliability.py`
 - Test: `tests/engine/test_reliability.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -215,7 +215,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ```python
 import numpy as np
 
-from focusstack.select.reliability import excess_kurtosis, smooth_curves, classify_reliable
+from planefuse.select.reliability import excess_kurtosis, smooth_curves, classify_reliable
 
 
 def test_smooth_curves_sums_neighbours():
@@ -261,9 +261,9 @@ def test_classify_respects_incoming_cell_mask():
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_reliability.py -v`
-Expected: FAIL — `No module named 'focusstack.select.reliability'`.
+Expected: FAIL — `No module named 'planefuse.select.reliability'`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/select/reliability.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/select/reliability.py`**
 
 ```python
 """Curve smoothing + kurtosis reliability (SPEC §7.0 steps 2-3)."""
@@ -320,7 +320,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/select/reliability.py tests/engine/test_reliability.py
+git add engine/src/planefuse/select/reliability.py tests/engine/test_reliability.py
 git commit -m "feat: focus-curve smoothing and kurtosis reliability classification"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -332,7 +332,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ### Task 3: Per-cell depth + in-focus interval
 
 **Files:**
-- Create: `engine/src/focusstack/select/intervals.py`
+- Create: `engine/src/planefuse/select/intervals.py`
 - Test: `tests/engine/test_intervals.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -342,7 +342,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ```python
 import numpy as np
 
-from focusstack.select.intervals import in_focus_interval, peak_index
+from planefuse.select.intervals import in_focus_interval, peak_index
 
 
 def test_peak_index_is_argmax():
@@ -373,9 +373,9 @@ def test_in_focus_interval_stops_at_gap():
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_intervals.py -v`
-Expected: FAIL — `No module named 'focusstack.select.intervals'`.
+Expected: FAIL — `No module named 'planefuse.select.intervals'`.
 
-- [ ] **Step 3: Implement (depth + interval portion) `engine/src/focusstack/select/intervals.py`**
+- [ ] **Step 3: Implement (depth + interval portion) `engine/src/planefuse/select/intervals.py`**
 
 ```python
 """Per-cell depth, in-focus intervals, and peak-set augmentation (SPEC §7.0 steps 4-5)."""
@@ -411,7 +411,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/select/intervals.py tests/engine/test_intervals.py
+git add engine/src/planefuse/select/intervals.py tests/engine/test_intervals.py
 git commit -m "feat: per-cell depth and relative-tolerance in-focus interval"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -421,7 +421,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ### Task 4: Coverage rows + peak-set augmentation
 
 **Files:**
-- Modify: `engine/src/focusstack/select/intervals.py` (add `build_rows`)
+- Modify: `engine/src/planefuse/select/intervals.py` (add `build_rows`)
 - Test: `tests/engine/test_augment.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -431,7 +431,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ```python
 import numpy as np
 
-from focusstack.select.intervals import build_rows
+from planefuse.select.intervals import build_rows
 
 
 def test_build_rows_one_per_reliable_cell():
@@ -468,7 +468,7 @@ def test_peak_set_augmentation_adds_boundary_rows():
 Run: `uv run pytest tests/engine/test_augment.py -v`
 Expected: FAIL — `cannot import name 'build_rows'`.
 
-- [ ] **Step 3: Add `build_rows` to `engine/src/focusstack/select/intervals.py`**
+- [ ] **Step 3: Add `build_rows` to `engine/src/planefuse/select/intervals.py`**
 
 ```python
 def build_rows(smoothed: np.ndarray, reliable: np.ndarray, focus_tolerance: float,
@@ -541,7 +541,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/select/intervals.py tests/engine/test_augment.py
+git add engine/src/planefuse/select/intervals.py tests/engine/test_augment.py
 git commit -m "feat: coverage rows with peak-set augmentation"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -551,7 +551,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ### Task 5: Interval-stabbing set cover + degenerate floor
 
 **Files:**
-- Create: `engine/src/focusstack/select/cover.py`
+- Create: `engine/src/planefuse/select/cover.py`
 - Test: `tests/engine/test_cover.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -561,7 +561,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ```python
 import numpy as np
 
-from focusstack.select.cover import min_stab_cover, select_indices
+from planefuse.select.cover import min_stab_cover, select_indices
 
 
 def test_min_stab_cover_picks_right_endpoints():
@@ -607,9 +607,9 @@ def test_degenerate_floor_keeps_all_when_fewer_than_three():
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_cover.py -v`
-Expected: FAIL — `No module named 'focusstack.select.cover'`.
+Expected: FAIL — `No module named 'planefuse.select.cover'`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/select/cover.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/select/cover.py`**
 
 ```python
 """Interval-stabbing set cover + degenerate floor (SPEC §7.0 steps 6-7)."""
@@ -655,7 +655,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/select/cover.py tests/engine/test_cover.py
+git add engine/src/planefuse/select/cover.py tests/engine/test_cover.py
 git commit -m "feat: interval-stabbing set cover with degenerate floor"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -667,8 +667,8 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ### Task 6: `select_frames` orchestrator
 
 **Files:**
-- Create: `engine/src/focusstack/select/pipeline.py`
-- Modify: `engine/src/focusstack/select/__init__.py` (export `SelectParams`, `SelectionResult`, `select_frames`)
+- Create: `engine/src/planefuse/select/pipeline.py`
+- Modify: `engine/src/planefuse/select/__init__.py` (export `SelectParams`, `SelectionResult`, `select_frames`)
 - Test: `tests/engine/test_select_pipeline.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -678,9 +678,9 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ```python
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.select import SelectParams, select_frames
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.select import SelectParams, select_frames
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 
@@ -712,7 +712,7 @@ def test_select_low_contrast_keeps_all():
 Run: `uv run pytest tests/engine/test_select_pipeline.py -v`
 Expected: FAIL — cannot import `SelectParams`/`select_frames`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/select/pipeline.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/select/pipeline.py`**
 
 ```python
 """Smart frame-selection orchestrator (SPEC §7.0 step 8)."""
@@ -723,12 +723,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from focusstack.backend import Device
-from focusstack.select.cover import select_indices
-from focusstack.select.focus_measure import compute_focus_measures
-from focusstack.select.intervals import build_rows
-from focusstack.select.reliability import classify_reliable, smooth_curves
-from focusstack.stack.base import FrameSource
+from planefuse.backend import Device
+from planefuse.select.cover import select_indices
+from planefuse.select.focus_measure import compute_focus_measures
+from planefuse.select.intervals import build_rows
+from planefuse.select.reliability import classify_reliable, smooth_curves
+from planefuse.stack.base import FrameSource
 
 # Default kurtosis threshold, calibrated against the synthetic generator
 # (see tests/synthetic/calibrate_kurtosis.py). Cells whose smoothed focus curve
@@ -764,12 +764,12 @@ def select_frames(source: FrameSource, device: Device, params: SelectParams,
     return SelectionResult(kept=kept, redundant=redundant, warning=warning, reliable=reliable)
 ```
 
-Update `engine/src/focusstack/select/__init__.py`:
+Update `engine/src/planefuse/select/__init__.py`:
 
 ```python
 """Smart frame selection / stack thinning (SPEC §7.0)."""
 
-from focusstack.select.pipeline import SelectParams, SelectionResult, select_frames
+from planefuse.select.pipeline import SelectParams, SelectionResult, select_frames
 
 __all__ = ["SelectParams", "SelectionResult", "select_frames"]
 ```
@@ -782,7 +782,7 @@ Expected: PASS. If `test_select_thins_oversampled_stack` keeps all 40 (no thinni
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/select tests/engine/test_select_pipeline.py
+git add engine/src/planefuse/select tests/engine/test_select_pipeline.py
 git commit -m "feat: smart frame-selection orchestrator (select_frames)"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -827,10 +827,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.select.focus_measure import compute_focus_measures
-from focusstack.select.reliability import excess_kurtosis, smooth_curves
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.select.focus_measure import compute_focus_measures
+from planefuse.select.reliability import excess_kurtosis, smooth_curves
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 
@@ -869,12 +869,12 @@ if __name__ == "__main__":
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from focusstack.backend import get_device
-from focusstack.select import SelectParams, select_frames
-from focusstack.select.focus_measure import compute_focus_measures
-from focusstack.select.reliability import classify_reliable, smooth_curves
-from focusstack.stack.base import get_algorithm
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.select import SelectParams, select_frames
+from planefuse.select.focus_measure import compute_focus_measures
+from planefuse.select.reliability import classify_reliable, smooth_curves
+from planefuse.stack.base import get_algorithm
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 
@@ -917,7 +917,7 @@ def test_selection_coverage_and_quality():
 - [ ] **Step 3: Run the calibration script and set the default threshold**
 
 Run: `uv run python -m tests.synthetic.calibrate_kurtosis`
-Read `recommended_threshold` from the JSON. If it differs materially from the placeholder `1.0`, set `DEFAULT_KURTOSIS_THRESHOLD` in `engine/src/focusstack/select/pipeline.py` to a value that cleanly separates the two populations (round to a stable value, e.g. one decimal). Re-run Task 6's tests and the two tests above.
+Read `recommended_threshold` from the JSON. If it differs materially from the placeholder `1.0`, set `DEFAULT_KURTOSIS_THRESHOLD` in `engine/src/planefuse/select/pipeline.py` to a value that cleanly separates the two populations (round to a stable value, e.g. one decimal). Re-run Task 6's tests and the two tests above.
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -927,7 +927,7 @@ Expected: PASS. If `test_selection_coverage_and_quality` keeps too many or too f
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/synthetic/generate.py tests/synthetic/calibrate_kurtosis.py tests/engine/test_frame_selection_quality.py engine/src/focusstack/select/pipeline.py
+git add tests/synthetic/generate.py tests/synthetic/calibrate_kurtosis.py tests/engine/test_frame_selection_quality.py engine/src/planefuse/select/pipeline.py
 git commit -m "feat: kurtosis calibration + frame-selection coverage/quality tests"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -937,8 +937,8 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ### Task 8: Pipeline + CLI integration; finish
 
 **Files:**
-- Modify: `engine/src/focusstack/pipeline.py` (run selection before stacking when enabled)
-- Modify: `engine/src/focusstack/cli.py` (`--select-frames`, `--focus-tolerance`)
+- Modify: `engine/src/planefuse/pipeline.py` (run selection before stacking when enabled)
+- Modify: `engine/src/planefuse/cli.py` (`--select-frames`, `--focus-tolerance`)
 - Modify: `README.md`
 - Test: `tests/engine/test_cli_select.py`
 
@@ -949,8 +949,8 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 ```python
 from typer.testing import CliRunner
 
-from focusstack.cli import app
-from focusstack.io import save_image
+from planefuse.cli import app
+from planefuse.io import save_image
 from tests.synthetic.generate import generate_stack
 
 runner = CliRunner()
@@ -974,9 +974,9 @@ def test_cli_select_frames_runs(tmp_path):
 Run: `uv run pytest tests/engine/test_cli_select.py -v`
 Expected: FAIL — `No such option: --select-frames`.
 
-- [ ] **Step 3: Wire selection into `engine/src/focusstack/pipeline.py`**
+- [ ] **Step 3: Wire selection into `engine/src/planefuse/pipeline.py`**
 
-Add a `select: SelectParams | None = None` parameter to `stack_frames` (import `from focusstack.select import SelectParams, select_frames`). After the alignment stage sets `source`/`masks` (and before the tiling decision), when `select is not None`, run selection over `source` and replace `source`/`masks` with index-subset views over the kept frames:
+Add a `select: SelectParams | None = None` parameter to `stack_frames` (import `from planefuse.select import SelectParams, select_frames`). After the alignment stage sets `source`/`masks` (and before the tiling decision), when `select is not None`, run selection over `source` and replace `source`/`masks` with index-subset views over the kept frames:
 
 ```python
     if select is not None:
@@ -1006,7 +1006,7 @@ class _SubsetSource:
 
 (If you add it to `stack/sources.py`, import it in pipeline.py; if a CLI string warning needs surfacing, the `progress` echo above is enough. Keep `select` independent of `align` — both, either, or neither may be set.)
 
-- [ ] **Step 4: Add CLI flags in `engine/src/focusstack/cli.py`**
+- [ ] **Step 4: Add CLI flags in `engine/src/planefuse/cli.py`**
 
 ```python
     select_frames_flag: bool = typer.Option(False, "--select-frames",
@@ -1018,7 +1018,7 @@ class _SubsetSource:
 Build params and pass them in:
 
 ```python
-    from focusstack.select import SelectParams
+    from planefuse.select import SelectParams
     select_params = None
     if select_frames_flag:
         select_params = SelectParams(focus_tolerance=focus_tolerance)
@@ -1044,7 +1044,7 @@ In `README.md`, change the M3 line to completed:
 `- [x] M3 — DMap, weighted, slabbing, smart frame selection`
 
 ```bash
-git add engine/src/focusstack/pipeline.py engine/src/focusstack/cli.py engine/src/focusstack/stack/sources.py tests/engine/test_cli_select.py README.md
+git add engine/src/planefuse/pipeline.py engine/src/planefuse/cli.py engine/src/planefuse/stack/sources.py tests/engine/test_cli_select.py README.md
 git commit -m "feat: --select-frames CLI + pipeline integration; mark M3 complete"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`

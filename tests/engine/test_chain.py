@@ -1,6 +1,6 @@
 import numpy as np
 
-from focusstack.align.chain import chain_to_reference
+from planefuse.align.chain import chain_to_reference
 
 
 def test_chain_reference_is_identity():

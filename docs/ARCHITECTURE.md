@@ -1,6 +1,6 @@
 # Architecture
 
-FocusStack is one local application with four boundaries: the engine, persistent
+PlaneFuse is one local application with four boundaries: the engine, persistent
 projects, a localhost API, and a browser UI. The engine never imports server or UI
 code and can be used from Python or the CLI.
 
@@ -44,7 +44,7 @@ recipe.
 
 Linear DNG output is a 16-bit, contiguous RGB `LinearRaw` IFD compressed with
 lossless JPEG. Negative working values and highlight headroom are mapped reversibly
-to integer codes; DNG BlackLevel/WhiteLevel and private FocusStack XMP record the
+to integer codes; DNG BlackLevel/WhiteLevel and private PlaneFuse XMP record the
 inverse mapping. The XMP also records ordered source SHA-256 hashes, alignment
 transforms/quality, exclusions, algorithm parameters, device, and versions.
 

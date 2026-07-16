@@ -1,4 +1,4 @@
-# FocusStack Completion and RAW Workflow Design
+# PlaneFuse Completion and RAW Workflow Design
 
 **Date:** 2026-07-15  
 **Status:** Approved  
@@ -36,7 +36,7 @@ Work is split into four independently testable phases. Existing rendered-image w
 
 - Implement perspective alignment with homography output and validation.
 - Implement portable Lanczos-3 warping and parity tests.
-- Preserve ICC, EXIF, and XMP; write FocusStack provenance without copying invalid per-exposure fields.
+- Preserve ICC, EXIF, and XMP; write PlaneFuse provenance without copying invalid per-exposure fields.
 - Support verified 16-bit PNG, TIFF compression choices, JPEG metadata, and atomic export.
 - Finish typed error mapping, OOM fallback tests, device parity, golden fixtures, and performance probes.
 - Add RAW ingestion, scene-linear processing, and Linear-DNG output as specified below.
@@ -115,7 +115,7 @@ The reference frame supplies:
 - black/white calibration and baseline exposure;
 - ICC/profile information when semantically valid.
 
-FocusStack adds a private XMP namespace containing app/engine versions, source hashes and ordered paths, reference frame, decoder/version/settings, alignment transforms and quality scores, exclusions, algorithm and parameters, processing-domain declaration, and export timestamp.
+PlaneFuse adds a private XMP namespace containing app/engine versions, source hashes and ordered paths, reference frame, decoder/version/settings, alignment transforms and quality scores, exclusions, algorithm and parameters, processing-domain declaration, and export timestamp.
 
 Invalid single-exposure fields such as focus distance and original depth of field are removed or replaced with aggregate provenance. The writer uses atomic temporary-file replacement and then validates the result by:
 
@@ -130,7 +130,7 @@ Because Capture One exposes no headless conformance API, the repository includes
 The following documented gaps are implementation requirements:
 
 - portable Lanczos-3 and perspective alignment;
-- EXIF/XMP/ICC round-trip and FocusStack provenance;
+- EXIF/XMP/ICC round-trip and PlaneFuse provenance;
 - 16-bit PNG output;
 - complete import validation and alignment-quality decisions;
 - histogram, clipping, compare modes, overlays, shortcuts, queue controls, batch review, selection review, estimates, and export controls;

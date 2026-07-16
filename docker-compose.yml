@@ -2,18 +2,18 @@
 # The port is bound to 127.0.0.1 ONLY — `8425:8425` would bind 0.0.0.0 and expose the
 # auth-less server to the LAN, violating §9's localhost-only model.
 services:
-  focusstack:
+  planefuse:
     build:
       context: .
       target: cuda
-    image: focusstack:cuda
+    image: planefuse:cuda
     ports:
       - "127.0.0.1:8425:8425"
     volumes:
       # Your photo library, read-only. Adjust the host path to taste.
-      - "${FOCUSSTACK_PHOTOS:-./photos}:/photos:ro"
-      # Projects + cache, read-write (matches FOCUSSTACK_DATA_DIR in the image).
-      - "fs-data:/data"
+      - "${PLANEFUSE_PHOTOS:-./photos}:/photos:ro"
+      # Projects + cache, read-write (matches PLANEFUSE_DATA_DIR in the image).
+      - "pf-data:/data"
     deploy:
       resources:
         reservations:
@@ -29,4 +29,4 @@ services:
       retries: 3
 
 volumes:
-  fs-data:
+  pf-data:

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from focusstack_server.main import create_app
+from planefuse_server.main import create_app
 
 
 def _client(tmp_path: Path) -> TestClient:

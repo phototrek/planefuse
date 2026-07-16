@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small reproducible FocusStack throughput benchmark; results are informational."""
+"""Small reproducible PlaneFuse throughput benchmark; results are informational."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ import time
 import numpy as np
 import torch
 
-from focusstack.backend import get_device
-from focusstack.stack import ArrayFrameSource, get_algorithm
+from planefuse.backend import get_device
+from planefuse.stack import ArrayFrameSource, get_algorithm
 
 
 def main() -> None:

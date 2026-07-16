@@ -21,7 +21,7 @@
 The stack runner records `{kind, path, method}` for each result; add `frames` so the UI can resolve `{frames}`. Pure pytest TDD.
 
 **Files:**
-- Modify: `server/src/focusstack_server/runners.py:34`
+- Modify: `server/src/planefuse_server/runners.py:34`
 - Test: `tests/server/test_runners.py` (create if absent; else append)
 
 - [ ] **Step 1: Write the failing test** — assert a stack result records its frame count.
@@ -33,8 +33,8 @@ from pathlib import Path
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.io import save_image
-from focusstack_server.main import create_app
+from planefuse.io import save_image
+from planefuse_server.main import create_app
 
 
 def _proj_with_frames(tmp_path, n=3):
@@ -68,7 +68,7 @@ def test_stack_result_records_frame_count(tmp_path):
 
 - [ ] **Step 2: Run to verify it fails** — `uv run pytest tests/server/test_runners.py::test_stack_result_records_frame_count -v` → FAIL (KeyError `frames`).
 
-- [ ] **Step 3: Implement** — `server/src/focusstack_server/runners.py:34`, add `frames` to the recorded dict:
+- [ ] **Step 3: Implement** — `server/src/planefuse_server/runners.py:34`, add `frames` to the recorded dict:
 
 ```python
         proj.images[image_id] = {"kind": "result", "path": str(out_path),
@@ -84,7 +84,7 @@ def test_stack_result_records_frame_count(tmp_path):
 - [ ] **Step 6: Commit**
 
 ```bash
-git add server/src/focusstack_server/runners.py tests/server/test_runners.py
+git add server/src/planefuse_server/runners.py tests/server/test_runners.py
 git commit -m "feat: record frame count in stack result metadata for {frames} token"
 ```
 End commit body with: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`

@@ -1,8 +1,8 @@
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.stack.dmap import dmap_fold
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.stack.dmap import dmap_fold
+from planefuse.stack.sources import ArrayFrameSource
 
 
 def test_fold_picks_sharpest_frame_per_pixel():

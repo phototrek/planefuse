@@ -1,6 +1,6 @@
 import numpy as np
 
-from focusstack_server.tiles import build_pyramid, rebuild_region, tile_path
+from planefuse_server.tiles import build_pyramid, rebuild_region, tile_path
 
 
 def test_rebuild_region_changes_only_dirty_tiles(tmp_path):

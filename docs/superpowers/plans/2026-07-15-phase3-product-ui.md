@@ -77,8 +77,8 @@
 ### Task 5: Add histogram and clipping indicators
 
 **Files:**
-- Create: `server/src/focusstack_server/api/analysis.py`
-- Modify: `server/src/focusstack_server/main.py`
+- Create: `server/src/planefuse_server/api/analysis.py`
+- Modify: `server/src/planefuse_server/main.py`
 - Create: `tests/server/test_analysis.py`
 - Modify: `ui/src/lib/api.ts`
 - Create: `ui/src/lib/viewer/Histogram.svelte`

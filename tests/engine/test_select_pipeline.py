@@ -1,8 +1,8 @@
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.select import SelectParams, select_frames
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.select import SelectParams, select_frames
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 

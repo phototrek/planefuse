@@ -25,7 +25,7 @@ cd ui
 npm ci --no-fund
 npm run build
 cd ..
-uv run --frozen --extra cpu --extra raw focusstack serve
+uv run --frozen --extra cpu --extra raw planefuse serve
 ```
 
 Windows/Linux with NVIDIA CUDA 12.8:
@@ -36,7 +36,7 @@ cd ui
 npm ci --no-fund
 npm run build
 cd ..
-uv run --frozen --extra cu12x --extra raw focusstack serve
+uv run --frozen --extra cu12x --extra raw planefuse serve
 ```
 
 `cpu` and `cu12x` are mutually exclusive. `raw` adds rawpy/LibRaw and ExifRead.
@@ -45,8 +45,8 @@ workflows do not require Homebrew or a native Exiv2 installation.
 
 ## One-click launchers
 
-- On macOS, double-click `Launch FocusStack.command` in Finder.
-- On Windows, double-click `Launch FocusStack.bat` in Explorer. A working NVIDIA
+- On macOS, double-click `Launch PlaneFuse.command` in Finder.
+- On Windows, double-click `Launch PlaneFuse.bat` in Explorer. A working NVIDIA
   driver selects the GPU launcher by default; otherwise it falls back to CPU.
 
 The root launchers delegate to the scripts in [scripts](../scripts), which check
@@ -62,14 +62,14 @@ For explicit device selection or troubleshooting, run
 CPU:
 
 ```bash
-docker build --target cpu -t focusstack:cpu .
-docker run --rm -p 127.0.0.1:8425:8425 -v focusstack-data:/data focusstack:cpu
+docker build --target cpu -t planefuse:cpu .
+docker run --rm -p 127.0.0.1:8425:8425 -v planefuse-data:/data planefuse:cpu
 ```
 
 NVIDIA:
 
 ```bash
-FOCUSSTACK_PHOTOS=/absolute/path/to/photos docker compose up --build
+PLANEFUSE_PHOTOS=/absolute/path/to/photos docker compose up --build
 ```
 
 The host port stays localhost-only and the photo mount is read-only. Docker on

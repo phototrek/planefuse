@@ -2,8 +2,8 @@ import numpy as np
 from skimage.metrics import structural_similarity
 from typer.testing import CliRunner
 
-from focusstack.cli import app
-from focusstack.io import ProcessingDomain, load_image, save_image, validate_linear_dng
+from planefuse.cli import app
+from planefuse.io import ProcessingDomain, load_image, save_image, validate_linear_dng
 from tests.engine.test_raw_loader import write_test_raw
 from tests.synthetic.generate import generate_stack
 
@@ -95,11 +95,11 @@ def test_serve_hint_without_server_package(monkeypatch):
     real_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):
-        if name.startswith("focusstack_server"):
+        if name.startswith("planefuse_server"):
             raise ImportError("simulated missing package")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     result = runner.invoke(app, ["serve"])
     assert result.exit_code != 0
-    assert "focusstack-server" in _err_text(result)
+    assert "planefuse-server" in _err_text(result)

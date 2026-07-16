@@ -1,12 +1,12 @@
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from focusstack.backend import get_device
-from focusstack.select import SelectParams, select_frames
-from focusstack.select.focus_measure import compute_focus_measures
-from focusstack.select.reliability import classify_reliable, smooth_curves
-from focusstack.stack.base import get_algorithm
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.select import SelectParams, select_frames
+from planefuse.select.focus_measure import compute_focus_measures
+from planefuse.select.reliability import classify_reliable, smooth_curves
+from planefuse.stack.base import get_algorithm
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 

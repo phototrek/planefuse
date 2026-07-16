@@ -1,11 +1,11 @@
 import numpy as np
 
-from focusstack.align.proxy import make_proxy
-from focusstack.backend import get_device
-from focusstack.io import ProcessingDomain
-from focusstack.pipeline import stack_frames
-from focusstack.select.focus_measure import compute_focus_measures
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.align.proxy import make_proxy
+from planefuse.backend import get_device
+from planefuse.io import ProcessingDomain
+from planefuse.pipeline import stack_frames
+from planefuse.select.focus_measure import compute_focus_measures
+from planefuse.stack.sources import ArrayFrameSource
 from tests.engine.test_raw_loader import write_test_raw
 
 
@@ -19,7 +19,7 @@ def test_raw_pipeline_retains_scene_linear_domain_and_reference_metadata(tmp_pat
     )
     assert result.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB
     assert result.metadata is not None
-    assert result.metadata.unique_camera_model == "FocusStack Camera Co SameCam Pro"
+    assert result.metadata.unique_camera_model == "PlaneFuse Camera Co SameCam Pro"
     assert result.metadata.decoder["white_balance"] == [1.0, 1.0, 1.0, 1.0]
     assert result.image.max() < 1.0
 

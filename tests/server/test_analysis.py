@@ -1,8 +1,8 @@
 import numpy as np
 from fastapi.testclient import TestClient
 
-from focusstack.io import save_float_tiff, save_image
-from focusstack_server.main import create_app
+from planefuse.io import save_float_tiff, save_image
+from planefuse_server.main import create_app
 
 
 def _register(client: TestClient, project_id: str, path) -> str:

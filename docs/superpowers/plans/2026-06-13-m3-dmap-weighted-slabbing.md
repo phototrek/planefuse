@@ -1,8 +1,8 @@
-# FocusStack M3 (Part 1) — DMap, Weighted Average, Slabbing Implementation Plan
+# PlaneFuse M3 (Part 1) — DMap, Weighted Average, Slabbing Implementation Plan
 
 > **For agentic workers:** REQUIRED: Use superpowers-extended-cc:subagent-driven-development (if subagents available) or superpowers-extended-cc:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add three stacking algorithms to the registry — DMap (depth-map, §7.2), Weighted average (§7.3), and Slabbing (§7.4) — plus the shared sharpness ops they need and 16-bit grayscale depth-map export, so `focusstack stack --method dmap|weighted|slab` works end to end and the §13.2 quality gates pass for every method.
+**Goal:** Add three stacking algorithms to the registry — DMap (depth-map, §7.2), Weighted average (§7.3), and Slabbing (§7.4) — plus the shared sharpness ops they need and 16-bit grayscale depth-map export, so `planefuse stack --method dmap|weighted|slab` works end to end and the §13.2 quality gates pass for every method.
 
 **Architecture:** All three register via the existing `@register` decorator in `stack/`, consume the same streamed `FrameSource` + optional validity `masks=` that PMax already accepts, and emit `StackResult(image, aux)`. New device-agnostic ops (`sharpness_map`, `box_filter`, `guided_filter`, `masked_diffuse`) live in `backend/ops.py` as the one true implementation, parity-tested per device. DMap streams an argmax fold then refines the index map (contrast threshold → guided-filter smoothing → masked diffusion) and composites in a second streaming pass with fractional-index blending, emitting a depth map in `aux`. Weighted is a single streaming online-softmax pass with a stack-global scale. Slabbing is a composite algorithm that reuses the registry: it splits the ordered frames into overlapping slabs, stacks each with an inner method, caches the slab results, then stacks those with an outer method.
 
@@ -22,7 +22,7 @@
 - Branch: do this work on `feat/m3-stacking` off `main`.
 - This machine's torch is CPU-only, so accelerator parity tests auto-skip — that is expected (matches CI; SPEC §13.2 runs accelerator suites manually pre-release).
 
-**Reference patterns to mirror:** `engine/src/focusstack/stack/pmax.py` is the template for a streaming algorithm with `masks=` handling, progress ticks, cancellation, the `_pyramid_depth`/tiling param, and `aux` output. DMap and Weighted should follow its shape (param dataclass via `params()`, `_tick` helper, mask-aware folding).
+**Reference patterns to mirror:** `engine/src/planefuse/stack/pmax.py` is the template for a streaming algorithm with `masks=` handling, progress ticks, cancellation, the `_pyramid_depth`/tiling param, and `aux` output. DMap and Weighted should follow its shape (param dataclass via `params()`, `_tick` helper, mask-aware folding).
 
 ---
 
@@ -33,7 +33,7 @@
 Add the device-agnostic primitives DMap and Weighted need: a general box filter (arbitrary radius), a windowed Laplacian sharpness map, an edge-aware guided filter, and a masked iterative diffusion fill. All parity-tested.
 
 **Files:**
-- Modify: `engine/src/focusstack/backend/ops.py` (append)
+- Modify: `engine/src/planefuse/backend/ops.py` (append)
 - Test: `tests/engine/test_sharpness_ops.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -45,7 +45,7 @@ import numpy as np
 import pytest
 import torch
 
-from focusstack.backend import get_device, ops
+from planefuse.backend import get_device, ops
 
 
 def _rand(c=1, h=64, w=80, seed=0):
@@ -124,9 +124,9 @@ def test_guided_filter_parity(accel_device):
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_sharpness_ops.py -v`
-Expected: FAIL — `AttributeError: module 'focusstack.backend.ops' has no attribute 'box_filter'`.
+Expected: FAIL — `AttributeError: module 'planefuse.backend.ops' has no attribute 'box_filter'`.
 
-- [ ] **Step 3: Append to `engine/src/focusstack/backend/ops.py`**
+- [ ] **Step 3: Append to `engine/src/planefuse/backend/ops.py`**
 
 ```python
 # ----------------------------------------------------------------------------
@@ -219,7 +219,7 @@ Expected: all PASS (accelerator parity runs where present; auto-skips on CPU-onl
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/backend/ops.py tests/engine/test_sharpness_ops.py
+git add engine/src/planefuse/backend/ops.py tests/engine/test_sharpness_ops.py
 git commit -m "feat: sharpness, box filter, guided filter, masked diffusion ops"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -231,7 +231,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 DMap exports a `(H, W)` depth map as 16-bit grayscale TIFF/PNG (SPEC §5). Extend `save_image` to accept 2-D arrays.
 
 **Files:**
-- Modify: `engine/src/focusstack/io/writer.py`
+- Modify: `engine/src/planefuse/io/writer.py`
 - Test: `tests/engine/test_writer_depth.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -242,7 +242,7 @@ DMap exports a `(H, W)` depth map as 16-bit grayscale TIFF/PNG (SPEC §5). Exten
 import numpy as np
 import tifffile
 
-from focusstack.io.writer import save_image
+from planefuse.io.writer import save_image
 
 
 def test_depth_map_16bit_tiff_roundtrip(tmp_path):
@@ -269,7 +269,7 @@ def test_depth_map_8bit_png(tmp_path):
 Run: `uv run pytest tests/engine/test_writer_depth.py -v`
 Expected: FAIL (the RGB-only paths mishandle a 2-D array — likely a shape error from `Image.fromarray` or the tiff scaling).
 
-- [ ] **Step 3: Modify `engine/src/focusstack/io/writer.py`**
+- [ ] **Step 3: Modify `engine/src/planefuse/io/writer.py`**
 
 At the top of `save_image`, right after `clipped = np.clip(arr, 0.0, 1.0)`, add a grayscale branch that handles 2-D `(H, W)` arrays for TIFF and PNG (depth-map export). Keep the existing RGB paths unchanged for 3-D input:
 
@@ -310,7 +310,7 @@ Expected: PASS. If `mode="I;16"` PNG raises on the installed Pillow, fall back t
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/io/writer.py tests/engine/test_writer_depth.py
+git add engine/src/planefuse/io/writer.py tests/engine/test_writer_depth.py
 git commit -m "feat: 16-bit grayscale depth-map export in save_image"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -324,7 +324,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 The core of DMap (SPEC §7.2 steps 1–2): per frame compute a sharpness map; streaming-fold the per-pixel argmax over frames into an integer index map + a running max-sharpness map. Memory is O(image), independent of frame count.
 
 **Files:**
-- Create: `engine/src/focusstack/stack/dmap.py` (fold portion; algorithm completed in Task 5)
+- Create: `engine/src/planefuse/stack/dmap.py` (fold portion; algorithm completed in Task 5)
 - Test: `tests/engine/test_dmap_fold.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -334,9 +334,9 @@ The core of DMap (SPEC §7.2 steps 1–2): per frame compute a sharpness map; st
 ```python
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.stack.dmap import dmap_fold
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.stack.dmap import dmap_fold
+from planefuse.stack.sources import ArrayFrameSource
 
 
 def test_fold_picks_sharpest_frame_per_pixel():
@@ -389,9 +389,9 @@ class _BoolMaskSource:
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_dmap_fold.py -v`
-Expected: FAIL — `No module named 'focusstack.stack.dmap'`.
+Expected: FAIL — `No module named 'planefuse.stack.dmap'`.
 
-- [ ] **Step 3: Implement the fold in `engine/src/focusstack/stack/dmap.py`**
+- [ ] **Step 3: Implement the fold in `engine/src/planefuse/stack/dmap.py`**
 
 ```python
 """DMap: depth-map focus stacking (SPEC §7.2).
@@ -407,8 +407,8 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from focusstack.backend import Device, ops
-from focusstack.stack.base import FrameSource
+from planefuse.backend import Device, ops
+from planefuse.stack.base import FrameSource
 
 
 def _sharp_of(frame_np: np.ndarray, device: Device, radius: int) -> torch.Tensor:
@@ -452,7 +452,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/stack/dmap.py tests/engine/test_dmap_fold.py
+git add engine/src/planefuse/stack/dmap.py tests/engine/test_dmap_fold.py
 git commit -m "feat: DMap streaming argmax sharpness fold"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -464,7 +464,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 SPEC §7.2 steps 3–4: mark pixels whose folded max-sharpness is below the contrast-threshold percentile as "undecided"; edge-aware smooth the index map with a guided filter (guide = max-sharpness); diffusion-fill the undecided regions.
 
 **Files:**
-- Modify: `engine/src/focusstack/stack/dmap.py` (add `refine_index`)
+- Modify: `engine/src/planefuse/stack/dmap.py` (add `refine_index`)
 - Test: `tests/engine/test_dmap_refine.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -474,8 +474,8 @@ SPEC §7.2 steps 3–4: mark pixels whose folded max-sharpness is below the cont
 ```python
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.stack.dmap import refine_index
+from planefuse.backend import get_device
+from planefuse.stack.dmap import refine_index
 
 
 def test_refine_smooths_and_fills_undecided():
@@ -506,7 +506,7 @@ def test_refine_all_decided_when_high_contrast():
 Run: `uv run pytest tests/engine/test_dmap_refine.py -v`
 Expected: FAIL — `cannot import name 'refine_index'`.
 
-- [ ] **Step 3: Add to `engine/src/focusstack/stack/dmap.py`**
+- [ ] **Step 3: Add to `engine/src/planefuse/stack/dmap.py`**
 
 ```python
 def refine_index(index: np.ndarray, max_sharp: np.ndarray, device: Device,
@@ -535,7 +535,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/stack/dmap.py tests/engine/test_dmap_refine.py
+git add engine/src/planefuse/stack/dmap.py tests/engine/test_dmap_refine.py
 git commit -m "feat: DMap index-map contrast threshold, guided smoothing, diffusion fill"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -547,8 +547,8 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 SPEC §7.2 steps 5–6: second streaming pass composites each output pixel from the frame(s) its fractional index points to (linear blend between adjacent frames); register the algorithm and emit the depth map in `aux`. Then the §13.2 quality test.
 
 **Files:**
-- Modify: `engine/src/focusstack/stack/dmap.py` (add `DMap` class + `composite`)
-- Modify: `engine/src/focusstack/stack/__init__.py` (import dmap so it registers)
+- Modify: `engine/src/planefuse/stack/dmap.py` (add `DMap` class + `composite`)
+- Modify: `engine/src/planefuse/stack/__init__.py` (import dmap so it registers)
 - Test: `tests/engine/test_dmap.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -559,14 +559,14 @@ SPEC §7.2 steps 5–6: second streaming pass composites each output pixel from 
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from focusstack.backend import get_device
-from focusstack.stack.base import get_algorithm
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.stack.base import get_algorithm
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 
 def test_dmap_registered():
-    from focusstack.stack import REGISTRY  # noqa: F401
+    from planefuse.stack import REGISTRY  # noqa: F401
     assert "dmap" in REGISTRY
 
 
@@ -595,12 +595,12 @@ def test_dmap_recovers_sharp_and_depth():
 Run: `uv run pytest tests/engine/test_dmap.py -v`
 Expected: FAIL — `"dmap"` not in REGISTRY.
 
-- [ ] **Step 3: Add the `composite` helper and `DMap` class to `engine/src/focusstack/stack/dmap.py`**
+- [ ] **Step 3: Add the `composite` helper and `DMap` class to `engine/src/planefuse/stack/dmap.py`**
 
 ```python
 from typing import Any
 
-from focusstack.stack.base import CancelFn, ParamSpec, ProgressFn, StackResult, register
+from planefuse.stack.base import CancelFn, ParamSpec, ProgressFn, StackResult, register
 
 
 def composite(source: FrameSource, frac_index: np.ndarray, device: Device,
@@ -656,10 +656,10 @@ class DMap:
         return StackResult(image=image, aux={"depth": depth, "index": frac.astype(np.float32)})
 ```
 
-Then add to `engine/src/focusstack/stack/__init__.py` (next to the pmax import):
+Then add to `engine/src/planefuse/stack/__init__.py` (next to the pmax import):
 
 ```python
-import focusstack.stack.dmap  # noqa: E402,F401  (registers "dmap")
+import planefuse.stack.dmap  # noqa: E402,F401  (registers "dmap")
 ```
 
 - [ ] **Step 4: Run to verify pass**
@@ -670,7 +670,7 @@ Expected: PASS. If SSIM is marginally under 0.95, first check the fold respects 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/stack/dmap.py engine/src/focusstack/stack/__init__.py tests/engine/test_dmap.py
+git add engine/src/planefuse/stack/dmap.py engine/src/planefuse/stack/__init__.py tests/engine/test_dmap.py
 git commit -m "feat: DMap fractional-index composite, registry, depth-map aux"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -684,8 +684,8 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 SPEC §7.3: softmax blend `w_i = exp(s_i / T)`, normalized by a single stack-global scale (the reference frame's 99.9th-percentile sharpness), via the numerically-stable online-softmax streaming trick.
 
 **Files:**
-- Create: `engine/src/focusstack/stack/weighted.py`
-- Modify: `engine/src/focusstack/stack/__init__.py`
+- Create: `engine/src/planefuse/stack/weighted.py`
+- Modify: `engine/src/planefuse/stack/__init__.py`
 - Test: `tests/engine/test_weighted.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -696,14 +696,14 @@ SPEC §7.3: softmax blend `w_i = exp(s_i / T)`, normalized by a single stack-glo
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from focusstack.backend import get_device
-from focusstack.stack.base import get_algorithm
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.stack.base import get_algorithm
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 
 def test_weighted_registered():
-    from focusstack.stack import REGISTRY
+    from planefuse.stack import REGISTRY
     assert "weighted" in REGISTRY
 
 
@@ -735,7 +735,7 @@ def test_weighted_low_temperature_approaches_hard_max():
 Run: `uv run pytest tests/engine/test_weighted.py -v`
 Expected: FAIL — `"weighted"` not in REGISTRY.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/stack/weighted.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/stack/weighted.py`**
 
 ```python
 """Weighted-average focus stacking (SPEC §7.3).
@@ -751,8 +751,8 @@ from typing import Any
 import numpy as np
 import torch
 
-from focusstack.backend import Device, ops
-from focusstack.stack.base import CancelFn, FrameSource, ParamSpec, ProgressFn, StackResult, register
+from planefuse.backend import Device, ops
+from planefuse.stack.base import CancelFn, FrameSource, ParamSpec, ProgressFn, StackResult, register
 
 
 def _sharp(frame_np: np.ndarray, device: Device, radius: int) -> torch.Tensor:
@@ -816,10 +816,10 @@ class Weighted:
         return StackResult(image=ops.to_numpy(image))
 ```
 
-Then add to `engine/src/focusstack/stack/__init__.py`:
+Then add to `engine/src/planefuse/stack/__init__.py`:
 
 ```python
-import focusstack.stack.weighted  # noqa: E402,F401  (registers "weighted")
+import planefuse.stack.weighted  # noqa: E402,F401  (registers "weighted")
 ```
 
 - [ ] **Step 4: Run to verify pass**
@@ -830,7 +830,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/stack/weighted.py engine/src/focusstack/stack/__init__.py tests/engine/test_weighted.py
+git add engine/src/planefuse/stack/weighted.py engine/src/planefuse/stack/__init__.py tests/engine/test_weighted.py
 git commit -m "feat: weighted-average stacking with online-softmax streaming"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -844,8 +844,8 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 SPEC §7.4: split the ordered frames into overlapping slabs of size N (default 10, overlap 2), stack each with an inner method (default pmax), then stack the slab results with an outer method (default dmap). Reuses the registry.
 
 **Files:**
-- Create: `engine/src/focusstack/stack/slab.py`
-- Modify: `engine/src/focusstack/stack/__init__.py`
+- Create: `engine/src/planefuse/stack/slab.py`
+- Modify: `engine/src/planefuse/stack/__init__.py`
 - Test: `tests/engine/test_slab.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -856,10 +856,10 @@ SPEC §7.4: split the ordered frames into overlapping slabs of size N (default 1
 import numpy as np
 from skimage.metrics import structural_similarity
 
-from focusstack.backend import get_device
-from focusstack.stack.base import get_algorithm
-from focusstack.stack.slab import plan_slabs
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.backend import get_device
+from planefuse.stack.base import get_algorithm
+from planefuse.stack.slab import plan_slabs
+from planefuse.stack.sources import ArrayFrameSource
 from tests.synthetic.generate import generate_stack
 
 
@@ -876,7 +876,7 @@ def test_plan_slabs_overlap():
 
 
 def test_slab_registered_and_recovers_sharp():
-    from focusstack.stack import REGISTRY
+    from planefuse.stack import REGISTRY
     assert "slab" in REGISTRY
     stack = generate_stack(h=120, w=150, n_frames=16, max_sigma=4.0, seed=62)
     src = ArrayFrameSource(stack.frames)
@@ -892,9 +892,9 @@ def test_slab_registered_and_recovers_sharp():
 - [ ] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/engine/test_slab.py -v`
-Expected: FAIL — `No module named 'focusstack.stack.slab'`.
+Expected: FAIL — `No module named 'planefuse.stack.slab'`.
 
-- [ ] **Step 3: Implement `engine/src/focusstack/stack/slab.py`**
+- [ ] **Step 3: Implement `engine/src/planefuse/stack/slab.py`**
 
 ```python
 """Slabbing: hierarchical stacking for deep stacks (SPEC §7.4)."""
@@ -905,11 +905,11 @@ from typing import Any
 
 import numpy as np
 
-from focusstack.backend import Device
-from focusstack.stack.base import (
+from planefuse.backend import Device
+from planefuse.stack.base import (
     CancelFn, FrameSource, ParamSpec, ProgressFn, StackResult, get_algorithm, register,
 )
-from focusstack.stack.sources import ArrayFrameSource
+from planefuse.stack.sources import ArrayFrameSource
 
 
 def plan_slabs(n: int, size: int, overlap: int) -> list[tuple[int, int]]:
@@ -993,16 +993,16 @@ Implementer note: the mask plumbing through slabs is fiddly because the inner al
 - [ ] **Step 4: Run to verify pass**
 
 Run: `uv run pytest tests/engine/test_slab.py -v`
-Expected: PASS. Then add the import to `engine/src/focusstack/stack/__init__.py`:
+Expected: PASS. Then add the import to `engine/src/planefuse/stack/__init__.py`:
 
 ```python
-import focusstack.stack.slab  # noqa: E402,F401  (registers "slab")
+import planefuse.stack.slab  # noqa: E402,F401  (registers "slab")
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add engine/src/focusstack/stack/slab.py engine/src/focusstack/stack/__init__.py tests/engine/test_slab.py
+git add engine/src/planefuse/stack/slab.py engine/src/planefuse/stack/__init__.py tests/engine/test_slab.py
 git commit -m "feat: slabbing composite stacking (inner/outer method reuse)"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -1014,7 +1014,7 @@ End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
 Wire `--depth-map` export into the CLI (DMap writes its `aux["depth"]` as a 16-bit grayscale TIFF), thread the new per-method params, run the whole suite + lint + types, and finish the branch.
 
 **Files:**
-- Modify: `engine/src/focusstack/cli.py`
+- Modify: `engine/src/planefuse/cli.py`
 - Modify: `README.md`
 - Test: `tests/engine/test_cli_methods.py`
 
@@ -1025,8 +1025,8 @@ Wire `--depth-map` export into the CLI (DMap writes its `aux["depth"]` as a 16-b
 ```python
 from typer.testing import CliRunner
 
-from focusstack.cli import app
-from focusstack.io import load_image, save_image
+from planefuse.cli import app
+from planefuse.io import load_image, save_image
 from tests.synthetic.generate import generate_stack
 
 runner = CliRunner()
@@ -1063,7 +1063,7 @@ def test_cli_weighted_runs(tmp_path):
 Run: `uv run pytest tests/engine/test_cli_methods.py -v`
 Expected: FAIL — `No such option: --depth-map`.
 
-- [ ] **Step 3: Modify `engine/src/focusstack/cli.py`**
+- [ ] **Step 3: Modify `engine/src/planefuse/cli.py`**
 
 Add a `--depth-map` option (an optional output path) to the `stack` command:
 
@@ -1111,16 +1111,16 @@ Run: `uv run mypy engine/src`  → Success.
 uv run python -c "
 import pathlib, tempfile
 from tests.synthetic.generate import generate_stack
-from focusstack.io import save_image
+from planefuse.io import save_image
 d = pathlib.Path(tempfile.mkdtemp()); print(d)
 s = generate_stack(h=200, w=260, n_frames=12, max_sigma=4.0, seed=123)
 for i,f in enumerate(s.frames): save_image(f, d/f'f_{i:03d}.tif', bit_depth=16)
 "
 # with DIR from the print:
-uv run focusstack stack DIR -o pmax.tif --method pmax --device cpu
-uv run focusstack stack DIR -o dmap.tif --method dmap --device cpu --depth-map depth.tif
-uv run focusstack stack DIR -o weighted.tif --method weighted --device cpu
-uv run focusstack stack DIR -o slab.tif --method slab --device cpu
+uv run planefuse stack DIR -o pmax.tif --method pmax --device cpu
+uv run planefuse stack DIR -o dmap.tif --method dmap --device cpu --depth-map depth.tif
+uv run planefuse stack DIR -o weighted.tif --method weighted --device cpu
+uv run planefuse stack DIR -o slab.tif --method slab --device cpu
 ```
 Expected: all four write output; `depth.tif` exists and opens as 16-bit grayscale.
 
@@ -1130,7 +1130,7 @@ In `README.md`, change `- [ ] M3 — DMap, weighted, slabbing, smart frame selec
 `- [~] M3 — DMap, weighted, slabbing done; smart frame selection (§7.0) pending`
 
 ```bash
-git add engine/src/focusstack/cli.py tests/engine/test_cli_methods.py README.md
+git add engine/src/planefuse/cli.py tests/engine/test_cli_methods.py README.md
 git commit -m "feat: --depth-map export and method params in CLI; M3 algorithms done"
 ```
 End commit body with: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`

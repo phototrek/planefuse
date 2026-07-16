@@ -155,7 +155,7 @@
         <div class="no-bake" data-testid="dng-no-bake-summary">
           <strong>Maximum-information Linear DNG for current Capture One Pro</strong>
           <span>No baked white balance, gamma, auto brightness, tone curve, denoise, sharpening, or output-color conversion.</span>
-          <span class="mono faint">16-bit lossless LinearRaw · LibRaw-validated · same-camera calibration and FocusStack provenance embedded</span>
+          <span class="mono faint">16-bit lossless LinearRaw · LibRaw-validated · same-camera calibration and PlaneFuse provenance embedded</span>
         </div>
       {/if}
 

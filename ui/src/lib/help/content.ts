@@ -32,10 +32,10 @@ export const docSections: DocSection[] = [
   {
     id: 'welcome',
     group: 'Start here',
-    title: 'Welcome to FocusStack',
+    title: 'Welcome to PlaneFuse',
     keywords: ['about', 'overview', 'intro'],
     html: `
-      <p>FocusStack merges a sequence of photos taken at different focus distances
+      <p>PlaneFuse merges a sequence of photos taken at different focus distances
       into a single image with more sharp detail than any one frame could hold on
       its own — a technique called <strong>focus stacking</strong>. It runs
       entirely on your own computer: nothing is uploaded anywhere, and it works
@@ -73,7 +73,7 @@ export const docSections: DocSection[] = [
       shoot a <strong>sequence</strong> where the focus point steps through the
       subject from front to back (or back to front) at a wide-open or
       moderate aperture, where the lens is optically at its best. Each frame is
-      sharp somewhere different. FocusStack then:</p>
+      sharp somewhere different. PlaneFuse then:</p>
       <ol>
         <li><strong>Aligns</strong> the frames, because focus-racking a lens
         subtly shifts and rescales the image (focus breathing), and handheld or
@@ -98,7 +98,7 @@ export const docSections: DocSection[] = [
       <ul>
         <li><strong>Lock exposure and white balance.</strong> Shoot manual
         exposure (or at least lock it) so brightness doesn't pulse frame to
-        frame. FocusStack can optionally match brightness during alignment, but
+        frame. PlaneFuse can optionally match brightness during alignment, but
         it works best correcting small drifts, not full auto-exposure swings.</li>
         <li><strong>Keep the frame-to-frame focus step small enough to
         overlap.</strong> Each step's sharp zone should overlap the next one's.
@@ -117,7 +117,7 @@ export const docSections: DocSection[] = [
         stacked correctly because they aren't in the same place in every frame;
         expect a ghost or a smeared region wherever that happened.</li>
         <li><strong>Shoot a few extra frames at both ends.</strong> It's cheap
-        insurance against a soft foreground or background edge, and FocusStack's
+        insurance against a soft foreground or background edge, and PlaneFuse's
         <a href="#smart-selection">smart frame selection</a> will simply mark
         genuinely redundant frames rather than force you to use every one.</li>
       </ul>
@@ -138,7 +138,7 @@ export const docSections: DocSection[] = [
       <p>This is the shortest path from a folder of photos to an exported,
       sharp image.</p>
       <ol>
-        <li><strong>Open FocusStack.</strong> The workspace opens with an
+        <li><strong>Open PlaneFuse.</strong> The workspace opens with an
         untitled scratch project — you don't have to create anything first.</li>
         <li><strong>Add your frames.</strong> In the left <em>Inputs</em> panel,
         click <strong>+ Add…</strong>, then <strong>📁 Pick folder…</strong> (or
@@ -146,7 +146,7 @@ export const docSections: DocSection[] = [
         photos are read from where they already live — nothing is copied. See
         <a href="#adding-frames">Adding photos to a project</a>.</li>
         <li><strong>Check the validation panel.</strong> Below the input list,
-        FocusStack tells you whether the frames are compatible (matching size
+        PlaneFuse tells you whether the frames are compatible (matching size
         and bit depth, or matching camera for RAW) and names any file that
         isn't. The <strong>Run</strong> button stays disabled until this is
         clean — see <a href="#validation-panel">Reading the validation panel</a>.</li>
@@ -188,7 +188,7 @@ export const docSections: DocSection[] = [
     keywords: ['import', 'folder', 'files', 'input list', 'scan'],
     html: `
       <p>Use the <strong>+ Add…</strong> button at the top of the Inputs panel.
-      You have three ways to point FocusStack at your photos:</p>
+      You have three ways to point PlaneFuse at your photos:</p>
       <ul>
         <li><strong>📁 Pick folder…</strong> opens your OS's native folder
         picker and adds every supported image directly inside it.</li>
@@ -199,7 +199,7 @@ export const docSections: DocSection[] = [
         useful when you already have the path copied, or the app is running
         somewhere a native dialog can't reach (e.g. inside a container).</li>
       </ul>
-      <p>Frames are always read <strong>in place</strong> from disk — FocusStack
+      <p>Frames are always read <strong>in place</strong> from disk — PlaneFuse
       never copies or moves your originals into the project. You can add more
       frames later with the same button, and remove any single frame with the
       <strong>✕</strong> that appears when you hover its row.</p>
@@ -214,7 +214,7 @@ export const docSections: DocSection[] = [
     title: 'Rendered images vs. camera RAW',
     keywords: ['jpeg', 'tiff', 'png', 'domain', 'develop', 'raw workflow'],
     html: `
-      <p>FocusStack works in one of two modes per stack, decided automatically
+      <p>PlaneFuse works in one of two modes per stack, decided automatically
       by what you add — you never pick it manually:</p>
       <ul>
         <li><strong>Rendered / developed images</strong> — JPEG, TIFF, or PNG
@@ -223,14 +223,14 @@ export const docSections: DocSection[] = [
         This is the simplest path: shoot, develop each frame the same way (or
         stack straight out of camera JPEGs), stack, export a finished TIFF/PNG/JPEG.</li>
         <li><strong>Camera RAW, "no-bake" mode</strong> — add RAW files
-        (the formats your installed decoder supports) and FocusStack decodes
+        (the formats your installed decoder supports) and PlaneFuse decodes
         them itself using a fixed, minimal recipe: no white balance, no gamma,
         no auto brightness, no denoise, no sharpening, no colour-space
         conversion. The stack is fused in the camera's own linear light values
         and exported as a <a href="#linear-dng">Linear DNG</a> that a raw
         developer such as Capture One opens and grades exactly like any other
         RAW file — you keep full creative control downstream instead of
-        inheriting FocusStack's opinion of white balance or contrast.</li>
+        inheriting PlaneFuse's opinion of white balance or contrast.</li>
       </ul>
       <p>You cannot mix the two domains in one stack — the validation panel
       will flag it as <em>mixed RAW and rendered files</em>. Pick one path per
@@ -254,7 +254,7 @@ export const docSections: DocSection[] = [
       <p>A RAW file carries per-camera calibration data — colour matrices, black
       and white levels, the sensor's colour filter array pattern — that a raw
       developer needs to render color correctly. A stacked image only has one
-      set of pixels but originally came from several exposures, so FocusStack
+      set of pixels but originally came from several exposures, so PlaneFuse
       can only honestly claim <em>one</em> calibration for the whole result.
       That means every frame in a RAW stack must share:</p>
       <ul>
@@ -297,7 +297,7 @@ export const docSections: DocSection[] = [
           calibration</td><td>See <a href="#same-camera-rule">the same-camera
           rule</a> for RAW stacks.</td></tr>
           <tr><td>Missing RAW calibration</td><td>The file's RAW metadata
-          doesn't include the calibration FocusStack needs to keep the DNG
+          doesn't include the calibration PlaneFuse needs to keep the DNG
           honest.</td></tr>
           <tr><td>RAW could not be decoded</td><td>The decoder rejected the
           file — it may be corrupt, or an unsupported RAW variant.</td></tr>
@@ -612,7 +612,7 @@ export const docSections: DocSection[] = [
         <li>Click a saved preset's name to load it back into the toolbar.</li>
         <li>Click the <strong>✕</strong> next to a preset to delete it.</li>
       </ul>
-      <p>Presets live with your FocusStack installation, not inside a single
+      <p>Presets live with your PlaneFuse installation, not inside a single
       project, so they're available across every project you open.</p>`
   },
 
@@ -629,7 +629,7 @@ export const docSections: DocSection[] = [
       neighbouring frames. Smart frame selection finds those and proposes
       dropping them, cutting stacking time without losing sharp coverage.</p>
       <p>To use it: enable <strong>Smart frame selection</strong> below the
-      toolbar, then click <strong>Review proposal</strong>. FocusStack analyses
+      toolbar, then click <strong>Review proposal</strong>. PlaneFuse analyses
       the sequence and shows:</p>
       <ul>
         <li>how many frames are <strong>kept</strong> vs. flagged
@@ -724,13 +724,13 @@ export const docSections: DocSection[] = [
     title: 'Compute device, GPU, and out-of-memory handling',
     keywords: ['cuda', 'mps', 'cpu', 'gpu', 'oom', 'tiled'],
     html: `
-      <p>The top bar shows the compute device FocusStack is using
+      <p>The top bar shows the compute device PlaneFuse is using
       (<strong>CUDA</strong> on an NVIDIA GPU, <strong>MPS</strong> on Apple
       silicon, or <strong>CPU</strong>) and free memory, so you always know
-      what's actually running your stack. FocusStack auto-selects the best
+      what's actually running your stack. PlaneFuse auto-selects the best
       available device on launch; CPU always works, just more slowly on large
       stacks.</p>
-      <p>If a stack is too large to fit in memory at once, FocusStack
+      <p>If a stack is too large to fit in memory at once, PlaneFuse
       automatically retries with <strong>tiled processing</strong> (splitting
       the image into pieces and processing each separately), and falls back
       further to <strong>tiled CPU</strong> if the GPU still can't fit it. The
@@ -820,7 +820,7 @@ export const docSections: DocSection[] = [
       applies. The <strong>Tonemap</strong> button in the viewer control bar
       applies a gentle preview-only exposure, white balance, and gamma curve
       so a RAW result previews at a normal-looking brightness and contrast
-      inside FocusStack.</p>
+      inside PlaneFuse.</p>
       <div class="callout tip">
         This toggle changes <strong>only what you see on screen</strong>. It
         never touches the pixels that get written to disk — the exported
@@ -867,7 +867,7 @@ export const docSections: DocSection[] = [
       lets you manually paint pixels from a different source or result into a
       copy of your chosen result, region by region.</p>
       <p>Open it from the <strong>Retouch</strong> button on any result's
-      thumbnail in the render drawer. FocusStack creates (or reopens, if you've
+      thumbnail in the render drawer. PlaneFuse creates (or reopens, if you've
       already started one) a retouch session for that result and switches to
       the Retouch screen.</p>`
   },
@@ -978,7 +978,7 @@ export const docSections: DocSection[] = [
         including any values below 0 or above the normal 1.0 white point that
         a normal 8/16-bit file would have to clip. This is <em>not</em> a RAW
         file (it doesn't carry camera calibration/mosaic data), but it is the
-        most complete non-RAW record of what FocusStack actually computed —
+        most complete non-RAW record of what PlaneFuse actually computed —
         useful for advanced compositing or verifying exposure decisions later.</li>
         <li><strong>16-bit depth map companion</strong> — only available for a
         <a href="#method-dmap">DMap</a> result, this exports the per-pixel
@@ -995,7 +995,7 @@ export const docSections: DocSection[] = [
     title: 'What "no-bake" RAW mode means',
     keywords: ['ahd', 'demosaic', 'white balance', 'unit gamma', 'no denoise'],
     html: `
-      <p>When you stack RAW files, FocusStack decodes them with a single fixed,
+      <p>When you stack RAW files, PlaneFuse decodes them with a single fixed,
       minimal recipe and never applies any of the aesthetic choices a normal
       RAW converter would:</p>
       <ul>
@@ -1018,7 +1018,7 @@ export const docSections: DocSection[] = [
       <p>The practical upshot: you get to make every white balance, exposure,
       tone, colour, noise-reduction, and sharpening decision yourself, in your
       normal raw developer, on the <em>merged, in-focus</em> image — instead
-      of inheriting whatever FocusStack might have guessed.</p>`
+      of inheriting whatever PlaneFuse might have guessed.</p>`
   },
   {
     id: 'linear-dng',
@@ -1029,18 +1029,18 @@ export const docSections: DocSection[] = [
       <p>A stacked image cannot be honestly written back out as the original
       Bayer (or other) sensor mosaic — its pixels are combined from several
       different captures and geometric transforms, so there is no real single
-      mosaic pattern it could claim to be. Instead, FocusStack writes a
+      mosaic pattern it could claim to be. Instead, PlaneFuse writes a
       demosaiced, three-channel <strong>LinearRaw DNG</strong> — the DNG
       representation that retains the most real stacked information without
       inventing sensor samples that were never captured.</p>
       <p>The file is 16-bit, losslessly compressed, and keeps camera identity,
       colour matrices, illuminants, as-shot neutral, black/white reference
-      levels, orientation, safe EXIF/XMP, and FocusStack's own provenance
+      levels, orientation, safe EXIF/XMP, and PlaneFuse's own provenance
       record (which frames, which method, which parameters produced it).
       Working values below 0 or above the normal 1.0 white point — which can
       happen during stacking — are encoded with a reversible mapping recorded
       in the file's own metadata, so nothing is silently clipped away.</p>
-      <p>Before the file is written to its final destination, FocusStack
+      <p>Before the file is written to its final destination, PlaneFuse
       reopens it with two independent readers and checks shape, required tags,
       compression, and pixel values match to within one 16-bit code — so a
       corrupted or non-conformant export is caught before you ever see it,
@@ -1057,12 +1057,12 @@ export const docSections: DocSection[] = [
     title: 'Importing into Capture One: checklist',
     keywords: ['import', 'catalog', 'session', 'workflow'],
     html: `
-      <p>FocusStack's Linear DNG is written for Capture One Pro (current
+      <p>PlaneFuse's Linear DNG is written for Capture One Pro (current
       release target: 16.7.5). Suggested workflow:</p>
       <ol>
         <li>Export <code>result.dng</code>; optionally also enable the
         <code>-scene-linear-float.tif</code> companion for advanced work.</li>
-        <li>Confirm the FocusStack job shows <strong>LibRaw validated</strong>
+        <li>Confirm the PlaneFuse job shows <strong>LibRaw validated</strong>
         before trusting the export.</li>
         <li>Import the DNG into a Capture One Pro Catalog or Session, same as
         any other RAW file.</li>
@@ -1074,13 +1074,13 @@ export const docSections: DocSection[] = [
         is no unexpected style already applied.</li>
         <li>Apply white balance, exposure, curve, colour, noise reduction, and
         sharpening exactly as you would on any other RAW capture. Export a
-        TIFF and visually compare it against the FocusStack viewer to confirm
+        TIFF and visually compare it against the PlaneFuse viewer to confirm
         nothing unexpected happened in the round trip.</li>
       </ol>
       <p>Capture One's own DNG support and the current release notes are
       documented officially by Capture One — worth a skim if you hit an
       import quirk that looks specific to their DNG handling rather than to
-      the file FocusStack produced.</p>`
+      the file PlaneFuse produced.</p>`
   },
   {
     id: 'raw-limitations',
@@ -1096,7 +1096,7 @@ export const docSections: DocSection[] = [
         metadata, since a stacked image has no single correct merged value for
         it.</li>
         <li>Capture One does not promise to honour another application's
-        embedded adjustments — FocusStack embeds provenance and calibration
+        embedded adjustments — PlaneFuse embeds provenance and calibration
         metadata, deliberately not a baked photographic look, so there is
         nothing for Capture One to "honour" beyond correct colour and
         exposure math.</li>
@@ -1114,7 +1114,7 @@ export const docSections: DocSection[] = [
     title: 'How projects work',
     keywords: ['project.json', 'save', 'scratch project'],
     html: `
-      <p>FocusStack opens with an untitled <strong>scratch project</strong> —
+      <p>PlaneFuse opens with an untitled <strong>scratch project</strong> —
       you can start adding frames and stacking immediately without any setup.
       Give it a name and click <strong>Save</strong> in the toolbar whenever
       you want it to persist as a named project you can return to later.</p>
@@ -1131,21 +1131,21 @@ export const docSections: DocSection[] = [
     title: 'Your original photos are never touched',
     keywords: ['delete', 'remove project', 'cache', 'rebuild'],
     html: `
-      <p>FocusStack reads your source photos from wherever they already live
+      <p>PlaneFuse reads your source photos from wherever they already live
       on disk and never copies, moves, renames, or deletes them as part of
-      normal use. This holds even when you remove a project from FocusStack —
+      normal use. This holds even when you remove a project from PlaneFuse —
       removing a project only <strong>unregisters</strong> it from the app; it
       never deletes your source files.</p>
       <p>The project's <code>cache/</code> folder (tiles, thumbnails) is fully
       rebuildable — safe to clear if you need the disk space, as long as
-      FocusStack is closed first. Keep <code>project.json</code> together with
+      PlaneFuse is closed first. Keep <code>project.json</code> together with
       your source files if you want to reopen the exact same project with full
       history later; it's the only part of a project that isn't trivially
       regenerated.</p>
       <div class="callout tip">
         Because sources are read in place, moving or renaming an original
-        photo outside FocusStack (in Finder/Explorer, another app, etc.) will
-        make FocusStack unable to find it next time — re-add it from its new
+        photo outside PlaneFuse (in Finder/Explorer, another app, etc.) will
+        make PlaneFuse unable to find it next time — re-add it from its new
         location, or move it back.
       </div>`
   },
@@ -1175,7 +1175,7 @@ export const docSections: DocSection[] = [
     title: 'Out of memory / a run is very slow',
     keywords: ['oom', 'crash', 'slow'],
     html: `
-      <p>FocusStack automatically retries an out-of-memory run with tiled
+      <p>PlaneFuse automatically retries an out-of-memory run with tiled
       processing, then falls back further to tiled CPU processing if needed —
       see <a href="#device-performance">Compute device, GPU, and out-of-memory
       handling</a>. If a run is still uncomfortably slow:</p>
@@ -1194,7 +1194,7 @@ export const docSections: DocSection[] = [
     title: 'Linear DNG export fails',
     keywords: ['dng error', 'capture one export'],
     html: `
-      <p>FocusStack never publishes a destination file that fails its own
+      <p>PlaneFuse never publishes a destination file that fails its own
       checks — if metadata, disk space, TIFF conformance, or the final LibRaw
       pixel-validation step fails, nothing is written rather than writing a
       broken file. Check:</p>
@@ -1217,10 +1217,10 @@ export const docSections: DocSection[] = [
     html: `
       <p>Re-select the result — registering a view with the viewer is
       idempotent, so simply clicking it again is often enough to recover.</p>
-      <p>If a source or result file was moved outside FocusStack after it was
+      <p>If a source or result file was moved outside PlaneFuse after it was
       registered, restore it to its original location (or re-add/rescan it
       from the new one). It's safe to clear just <code>cache/tiles</code>
-      while FocusStack is closed — tiles rebuild automatically the next time
+      while PlaneFuse is closed — tiles rebuild automatically the next time
       you view that image.</p>`
   },
   {
@@ -1229,7 +1229,7 @@ export const docSections: DocSection[] = [
     title: 'The app won\'t open / port 8425 is busy',
     keywords: ['localhost', 'address in use'],
     html: `
-      <p>FocusStack serves its interface only on <code>127.0.0.1</code>
+      <p>PlaneFuse serves its interface only on <code>127.0.0.1</code>
       (localhost) — never on your network — for safety. If port 8425 is
       already in use, the native launcher automatically probes the next few
       ports and opens your browser at whichever one it actually bound to, so
@@ -1290,7 +1290,7 @@ export const docSections: DocSection[] = [
           subject point lands on the same pixel in every frame.</td></tr>
           <tr><td><strong>Demosaic</strong></td><td>Converting a RAW sensor's
           mosaic of red/green/blue-filtered pixels into full-colour RGB pixels.
-          FocusStack uses the AHD demosaic algorithm.</td></tr>
+          PlaneFuse uses the AHD demosaic algorithm.</td></tr>
           <tr><td><strong>CFA (colour filter array)</strong></td><td>The
           pattern of colour filters over a sensor's pixels (commonly a Bayer
           pattern) that demosaicing reconstructs full colour from.</td></tr>
@@ -1303,11 +1303,11 @@ export const docSections: DocSection[] = [
           channel, 16-bit gives 65,536, meaning much smoother gradients and
           more room for edits before banding appears.</td></tr>
           <tr><td><strong>Domain (rendered vs. RAW)</strong></td><td>Which of
-          FocusStack's two pixel-value pipelines a stack uses — see
+          PlaneFuse's two pixel-value pipelines a stack uses — see
           <a href="#rendered-vs-raw">Rendered images vs. camera RAW</a>.</td></tr>
           <tr><td><strong>LinearRaw DNG</strong></td><td>A DNG variant storing
           already-demosaiced, three-channel linear RGB data rather than a
-          sensor mosaic — the format FocusStack's RAW export writes.</td></tr>
+          sensor mosaic — the format PlaneFuse's RAW export writes.</td></tr>
           <tr><td><strong>Provenance</strong></td><td>Metadata a result or
           export carries recording exactly which frames, method, and
           parameters produced it.</td></tr>

@@ -1,7 +1,7 @@
 import numpy as np
 
-from focusstack.backend import get_device
-from focusstack.align.estimate import PairResult, estimate_pair
+from planefuse.backend import get_device
+from planefuse.align.estimate import PairResult, estimate_pair
 from tests.synthetic.generate import generate_stack
 
 

@@ -5,10 +5,10 @@ import pytest
 import rawpy
 import tifffile
 
-from focusstack.errors import DiskSpaceError, DngExportError
-from focusstack.io import load_raw
-from focusstack.io.dng import save_linear_dng, validate_linear_dng
-from focusstack.io.metadata import parse_xmp_packet
+from planefuse.errors import DiskSpaceError, DngExportError
+from planefuse.io import load_raw
+from planefuse.io.dng import save_linear_dng, validate_linear_dng
+from planefuse.io.metadata import parse_xmp_packet
 from tests.engine.test_raw_loader import write_test_raw
 
 
@@ -37,14 +37,14 @@ def test_linear_dng_roundtrips_pixels_tags_and_provenance(tmp_path: Path):
         assert page.shape == image.shape
         assert page.tags[50706].value == b"\x01\x07\x01\x00"
         assert page.tags[50707].value == b"\x01\x04\x00\x00"
-        assert page.tags[50708].value == "FocusStack Camera Co SameCam Pro"
+        assert page.tags[50708].value == "PlaneFuse Camera Co SameCam Pro"
         assert 50721 in page.tags
         assert 50728 in page.tags
         assert 50778 in page.tags
         assert 50714 in page.tags
         assert 50717 in page.tags
         xmp = parse_xmp_packet(bytes(page.tags[700].value))
-        assert "pmax" in xmp["Xmp.FocusStack.Provenance"]
+        assert "pmax" in xmp["Xmp.PlaneFuse.Provenance"]
         encoded = page.asarray()
 
     restored = encoded.astype(np.float32) / 65535.0 * report.encoding_span + report.encoding_offset
@@ -75,7 +75,7 @@ def test_linear_dng_truncated_write_is_never_published(tmp_path: Path, monkeypat
     def write_truncated(path, *_args, **_kwargs):
         path.write_bytes(b"II*\x00")
 
-    monkeypatch.setattr("focusstack.io.dng._write_dng", write_truncated)
+    monkeypatch.setattr("planefuse.io.dng._write_dng", write_truncated)
     with pytest.raises(DngExportError, match="tifffile"):
         save_linear_dng(np.zeros((8, 8, 3), dtype=np.float32), destination, metadata, {})
     assert not destination.exists()
@@ -94,7 +94,7 @@ def test_linear_dng_reports_insufficient_atomic_output_space(tmp_path: Path, mon
     class Usage:
         free = 0
 
-    monkeypatch.setattr("focusstack.io.dng.shutil.disk_usage", lambda _path: Usage())
+    monkeypatch.setattr("planefuse.io.dng.shutil.disk_usage", lambda _path: Usage())
     destination = tmp_path / "no-space.dng"
     with pytest.raises(DiskSpaceError, match="not enough free space"):
         save_linear_dng(np.zeros((8, 8, 3), dtype=np.float32), destination, metadata, {})

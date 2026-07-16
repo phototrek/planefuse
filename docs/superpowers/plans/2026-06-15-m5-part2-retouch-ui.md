@@ -1,4 +1,4 @@
-# FocusStack M5 Part 2 Retouch UI Implementation Plan
+# PlaneFuse M5 Part 2 Retouch UI Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -35,7 +35,7 @@ execFileSync(
     '..',
     'python',
     '-c',
-    'import sys; from focusstack.io import load_image; f=load_image(sys.argv[1]); assert f.pixels.shape == (64, 80, 3); assert f.bit_depth == 16',
+    'import sys; from planefuse.io import load_image; f=load_image(sys.argv[1]); assert f.pixels.shape == (64, 80, 3); assert f.bit_depth == 16',
     outFile
   ],
   { stdio: 'inherit' }
