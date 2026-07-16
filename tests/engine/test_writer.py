@@ -1,9 +1,13 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 import imagecodecs
+from PIL import Image
 
 from planefuse.io import load_image
-from planefuse.io.writer import save_float_tiff, save_image
+from planefuse.io.metadata import ImageMetadata
+from planefuse.io.writer import _exif_bytes, save_float_tiff, save_image
 
 
 @pytest.fixture
@@ -62,6 +66,47 @@ def test_png16_rgb_roundtrip_without_8bit_quantization(tmp_path, img):
     np.testing.assert_allclose(encoded.astype(np.float32) / 65535.0, img, atol=1.0 / 65535 + 1e-6)
     back = load_image(out)
     assert back.bit_depth == 16
+
+
+def _metadata_with_source_subifd_pointers(source: Path) -> ImageMetadata:
+    # Mirrors what metadata_from_pillow captures from a real camera JPEG/TIFF:
+    # image.getexif().items() includes the ExifOffset/GPSInfo sub-IFD *pointer*
+    # tags as plain byte offsets into the *source* file, alongside real flat
+    # IFD0 fields like Make/Model/DateTime.
+    return ImageMetadata(
+        source_path=source,
+        camera_make="TestCam",
+        exif={
+            "Exif.Image.Make": "TestCam",
+            "Exif.Image.Model": "TestModel",
+            "Exif.Image.DateTime": "2026:01:01 00:00:00",
+            "Exif.Photo.ExifOffset": 78,  # dangling pointer, meaningless here
+            "Exif.Photo.GPSInfo": 210,  # dangling pointer, meaningless here
+        },
+    )
+
+
+def test_exif_bytes_skips_dangling_subifd_pointers(tmp_path):
+    # Regression: a source frame's Exif sub-IFD/GPS pointer, copied verbatim as
+    # a plain int, used to crash Image.Exif().tobytes() with
+    # AttributeError("'Exif' object has no attribute 'fp'") because it tried to
+    # lazily resolve the pointer against a file handle that never existed.
+    metadata = _metadata_with_source_subifd_pointers(tmp_path / "src.jpg")
+    encoded = _exif_bytes(metadata)
+    assert encoded is not None
+    reread = Image.Exif()
+    reread.load(encoded)
+    assert reread.get(271) == "TestCam"
+    assert 34665 not in reread
+    assert 34853 not in reread
+
+
+@pytest.mark.parametrize("suffix", [".png", ".jpg"])
+def test_export_survives_source_exif_subifd_pointer(tmp_path, img, suffix):
+    metadata = _metadata_with_source_subifd_pointers(tmp_path / "src.jpg")
+    out = tmp_path / f"out{suffix}"
+    save_image(img, out, bit_depth=8, metadata=metadata)
+    assert out.exists()
 
 
 def test_failed_export_never_publishes_partial_destination(tmp_path, img, monkeypatch):

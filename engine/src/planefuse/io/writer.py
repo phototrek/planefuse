@@ -19,6 +19,17 @@ from planefuse.io.metadata import ImageMetadata, build_xmp_packet
 
 _TIFF_COMPRESSION = {"none": None, "lzw": "lzw", "zlib": "zlib"}
 
+# Sub-IFD pointer tags (ExifOffset, GPSInfo, Interop, ...). metadata.exif carries
+# these as a plain int copied from the *source* file's byte offset, which is
+# meaningless in a freshly built Exif blob. Pillow's Exif.tobytes() special-cases
+# ExifTags.IFD.Exif/GPSInfo: if their value isn't already a dict, it calls
+# self.get_ifd(tag) to lazily resolve the pointer against the *original* file's
+# handle — which a standalone Image.Exif() never has, raising
+# AttributeError("'Exif' object has no attribute 'fp'"). The real sub-IFD data
+# (LensModel, DateTimeOriginal, GPS coordinates, ...) is already carried under
+# its own tag/key, so dropping the dangling pointer itself loses nothing.
+_IFD_POINTER_TAGS = {member.value for member in ExifTags.IFD}
+
 
 def _exif_bytes(metadata: ImageMetadata | None) -> bytes | None:
     if metadata is None:
@@ -28,7 +39,9 @@ def _exif_bytes(metadata: ImageMetadata | None) -> bytes | None:
     inverse = {name: tag for tag, name in ExifTags.TAGS.items()}
     for key, value in safe.exif.items():
         tag = inverse.get(key.rsplit(".", 1)[-1])
-        if tag is not None and isinstance(value, (str, int, float, bytes)):
+        if tag is None or tag in _IFD_POINTER_TAGS:
+            continue
+        if isinstance(value, (str, int, float, bytes)):
             exif[tag] = value
     exif[274] = 1
     return exif.tobytes() if len(exif) else None
