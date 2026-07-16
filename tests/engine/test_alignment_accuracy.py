@@ -38,6 +38,11 @@ def test_recovered_transforms_match_ground_truth(tmp_path, seed):
     ref = report.reference
     factor = max(stack.frames[0].shape[:2]) / align_res
 
+    # A later direct-to-reference retry must not hide a bad consecutive ECC
+    # solve. Every synthetic link is alignable and should clear the quality
+    # gate on its own; seed 41 exercises the direction-sensitive fallback.
+    assert all(correlation > 0.9 for correlation in report.correlations.values())
+
     for k in range(len(stack.frames)):
         gt = invert(stack.transforms[k]) @ stack.transforms[ref]
         est_full = scale_transform_to_resolution(report.matrices[k], factor)
