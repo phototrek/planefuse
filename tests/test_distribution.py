@@ -118,7 +118,9 @@ def test_guided_installer_is_visual_platform_specific_and_release_backed():
     assert "navigator.userAgentData" in script
     assert "window.localStorage" in script
     assert "actions/deploy-pages" in workflow
-    assert "enablement: true" in workflow
+    assert "Detect GitHub Pages availability" in workflow
+    assert "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pages" in workflow
+    assert "steps.pages_site.outputs.enabled == 'true'" in workflow
     assert "uv-aarch64-apple-darwin.tar.gz" in workflow
     assert "uv-x86_64-pc-windows-msvc.zip" in workflow
     assert "sha256sum -c" in workflow
