@@ -96,13 +96,13 @@ def test_container_configuration_keeps_localhost_boundary_and_raw_support():
 
 
 def test_guided_installer_is_visual_platform_specific_and_release_backed():
-    page = (ROOT / "installer/index.html").read_text()
-    script = (ROOT / "installer/setup.js").read_text()
-    installer_favicon = (ROOT / "installer/favicon.svg").read_text()
-    app_favicon = (ROOT / "ui/static/favicon.svg").read_text()
-    app_shell = (ROOT / "ui/src/app.html").read_text()
-    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-    dependabot = (ROOT / ".github/dependabot.yml").read_text()
+    page = (ROOT / "installer/index.html").read_text(encoding="utf-8")
+    script = (ROOT / "installer/setup.js").read_text(encoding="utf-8")
+    installer_favicon = (ROOT / "installer/favicon.svg").read_text(encoding="utf-8")
+    app_favicon = (ROOT / "ui/static/favicon.svg").read_text(encoding="utf-8")
+    app_shell = (ROOT / "ui/src/app.html").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    dependabot = (ROOT / ".github/dependabot.yml").read_text(encoding="utf-8")
 
     assert '<link rel="icon" href="favicon.svg" type="image/svg+xml">' in page
     assert '<link rel="icon" href="/favicon.svg" type="image/svg+xml" />' in app_shell

@@ -12,7 +12,7 @@ import tifffile
 from planefuse.align import AlignParams
 from planefuse.align import align_stack
 from planefuse.backend import get_device
-from planefuse.errors import DngExportError
+from planefuse.errors import DngExportError, ValidationError
 from planefuse.io import (
     ProcessingDomain,
     load_image,
@@ -21,6 +21,7 @@ from planefuse.io import (
     save_float_tiff,
     save_image,
     save_linear_dng,
+    validate_stack,
 )
 from planefuse.pipeline import stack_frames
 from planefuse.select import SelectParams
@@ -40,7 +41,21 @@ def make_stack_runner(store: ProjectStore, proj: Project, params: dict[str, Any]
     algo_params = params.get("algo_params", {})
 
     def run(progress: Callable[[str, float], None], cancel: Callable[[], bool]) -> dict:
-        result = stack_frames(paths, method=method, params=algo_params, device_pref=device,
+        # The workspace UI can contain rejected files while the valid remainder
+        # is still stackable. Skip those here instead of failing the whole job.
+        report = validate_stack(paths)
+        frames = paths
+        if not report.ok:
+            frames = [Path(status.path) for status in report.files if status.status == "ok"]
+            skipped = [status for status in report.files if status.status != "ok"]
+            shown = ", ".join(status.path.name for status in skipped[:8])
+            more = "" if len(skipped) <= 8 else f" (+{len(skipped) - 8} more)"
+            progress(f"skipped {len(skipped)} mismatched frame(s): {shown}{more}", 0.0)
+            if len(frames) < 2:
+                detail = "\n  ".join(f"{status.path.name}: {status.status}" for status in skipped)
+                raise ValidationError("no usable frames after skipping mismatched:\n  " + detail)
+
+        result = stack_frames(frames, method=method, params=algo_params, device_pref=device,
                               align=align, select=select, cache_dir=proj.cache,
                               progress=progress, cancel=cancel)
         image_id = uuid.uuid4().hex[:12]
@@ -70,10 +85,10 @@ def make_stack_runner(store: ProjectStore, proj: Project, params: dict[str, Any]
             "kind": "result",
             "path": str(out_path),
             "method": method,
-            "frames": len(paths),
+            "frames": len(frames),
             "domain": result.domain.value,
             "storage": storage,
-            "reference_path": str(paths[len(paths) // 2]),
+            "reference_path": str(frames[len(frames) // 2]),
             "metadata": metadata_to_dict(result.metadata) if result.metadata is not None else None,
             "decoder": dict(result.metadata.decoder) if result.metadata is not None else {},
             "provenance": result.provenance,

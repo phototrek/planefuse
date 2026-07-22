@@ -18,6 +18,7 @@
   let normalizeBrightness = $state(true);
   let correlationThreshold = $state(0.9);
   let dropMisaligned = $state(false);
+  let useRefineFullRes = $state(false);
   let useSelect = $state(false);
   let selectionAccepted = $state(false);
   let selectionJobId = $state<string | null>(null);
@@ -103,7 +104,8 @@
         interp: alignInterpolation,
         normalize_brightness: normalizeBrightness,
         correlation_threshold: correlationThreshold,
-        drop_misaligned: dropMisaligned
+        drop_misaligned: dropMisaligned,
+        refine_full_res: useRefineFullRes
       };
     }
     if (useSelect) params.select = {};
@@ -115,7 +117,15 @@
     await api.addPreset(presetName, {
       methods: selected,
       algo_params: values,
-      align: useAlign ? { max_long_edge: maxLongEdge } : undefined,
+      align: useAlign ? {
+        max_long_edge: maxLongEdge,
+        model: alignModel,
+        interp: alignInterpolation,
+        normalize_brightness: normalizeBrightness,
+        correlation_threshold: correlationThreshold,
+        drop_misaligned: dropMisaligned,
+        refine_full_res: useRefineFullRes
+      } : undefined,
       select: useSelect ? {} : undefined
     });
     presets = await api.listPresets();
@@ -134,7 +144,24 @@
       if (p.params.algo_params) values = { ...(p.params.algo_params as Record<string, unknown>) };
     }
     useAlign = !!p.params.align;
-    if (p.params.align) maxLongEdge = (p.params.align as { max_long_edge: number }).max_long_edge;
+    if (p.params.align) {
+      const a = p.params.align as {
+        max_long_edge?: number;
+        model?: string;
+        interp?: string;
+        normalize_brightness?: boolean;
+        correlation_threshold?: number;
+        drop_misaligned?: boolean;
+        refine_full_res?: boolean;
+      };
+      maxLongEdge = a.max_long_edge ?? maxLongEdge;
+      alignModel = a.model ?? alignModel;
+      alignInterpolation = a.interp ?? alignInterpolation;
+      normalizeBrightness = a.normalize_brightness ?? normalizeBrightness;
+      correlationThreshold = a.correlation_threshold ?? correlationThreshold;
+      dropMisaligned = a.drop_misaligned ?? dropMisaligned;
+      useRefineFullRes = !!a.refine_full_res;
+    }
     useSelect = !!p.params.select;
   }
 
@@ -287,6 +314,12 @@
       <input class="num threshold" type="number" bind:value={correlationThreshold} min="0" max="1" step="0.01" />
     {/if}
   </label>
+  {#if useAlign}
+    <label class="toggle" title="Polish each alignment at native resolution (CPU; slower, sub-pixel — good for high-MP sensors)">
+      <input type="checkbox" bind:checked={useRefineFullRes} data-testid="align-refine-full" />
+      <span>Full-res refine</span>
+    </label>
+  {/if}
   <label class="toggle">
     <input type="checkbox" bind:checked={useSelect} />
     <span>Smart frame selection</span>
@@ -309,7 +342,7 @@
       {#if selectionProposal.warning}<span class="warn">{selectionProposal.warning}</span>{/if}
     </div>
     <div class="proposal-strip">
-      {#each appState.inputs as frame, index}
+      {#each appState.inputs as frame, index (frame.path)}
         <span class:excluded={selectionProposal.redundant.includes(index)} title={frame.name}>{index + 1}</span>
       {/each}
     </div>
@@ -324,7 +357,7 @@
       <span class="faint">Nothing is queued until you confirm.</span>
     </div>
     <ol>
-      {#each proposedGroups as group, index}
+      {#each proposedGroups as group, index (group.join('\n'))}
         <li><span>Group {index + 1}</span><span class="mono faint">{group.length} frames · {group[0]?.split(/[\\/]/).pop()} → {group[group.length - 1]?.split(/[\\/]/).pop()}</span></li>
       {/each}
     </ol>

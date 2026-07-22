@@ -145,10 +145,106 @@ def load_image(path: Path) -> Frame:
     return Frame(pixels, depth, metadata)
 
 
+@dataclass
+class _FrameProbe:
+    path: Path
+    width: int
+    height: int
+    bit_depth: int
+    domain: ProcessingDomain
+    metadata: ImageMetadata | None = None
+    decoder: dict[str, object] = field(default_factory=dict)
+
+
+def _oriented_size(width: int, height: int, orientation: int) -> tuple[int, int]:
+    if orientation in {5, 6, 7, 8}:
+        return height, width
+    return width, height
+
+
+def _probe_png(path: Path) -> tuple[int, int, int]:
+    with path.open("rb") as stream:
+        header = stream.read(33)
+    if len(header) < 33 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        raise ValidationError(f"{path.name}: unreadable PNG header")
+    width = int.from_bytes(header[16:20], "big")
+    height = int.from_bytes(header[20:24], "big")
+    bit_depth = int(header[24])
+    color_type = int(header[25])
+    if color_type != 2:
+        raise ValidationError(f"{path.name}: RGB input required (got PNG color type {color_type})")
+    if bit_depth not in (8, 16):
+        raise ValidationError(f"unsupported sample type {bit_depth}-bit; expected uint8 or uint16")
+    return width, height, bit_depth
+
+
+def _probe_rendered_image(path: Path) -> tuple[int, int, int]:
+    suffix = path.suffix.lower()
+    if suffix not in RENDERED_EXTENSIONS:
+        raise ValidationError(f"{path.name}: unsupported format {suffix}")
+    if suffix in (".tif", ".tiff"):
+        with tifffile.TiffFile(path) as tf:
+            page = tf.pages[0]
+            if not isinstance(page, tifffile.TiffPage):
+                raise ValidationError(f"{path.name}: unsupported TIFF frame layout")
+            samples = int(page.samplesperpixel)
+            if samples != 3:
+                raise ValidationError(f"{path.name}: RGB input required (got {samples} channels)")
+            bits = page.bitspersample
+            if isinstance(bits, tuple):
+                depth = int(bits[0])
+                if any(int(item) != depth for item in bits):
+                    raise ValidationError(f"{path.name}: RGB input required (mixed bit depths)")
+            else:
+                depth = int(bits)
+            if depth not in (8, 16):
+                raise ValidationError(f"unsupported sample type {depth}-bit; expected uint8 or uint16")
+            orientation_tag = page.tags.get(274)
+            orientation = int(orientation_tag.value) if orientation_tag is not None else 1
+            width, height = _oriented_size(
+                int(page.imagewidth),
+                int(page.imagelength),
+                orientation,
+            )
+            return width, height, depth
+    if suffix == ".png":
+        return _probe_png(path)
+    with Image.open(path) as im:
+        if im.mode != "RGB":
+            raise ValidationError(f"{path.name}: RGB input required (got mode {im.mode})")
+        orientation = int(im.getexif().get(274, 1) or 1)
+        width, height = _oriented_size(im.width, im.height, orientation)
+        return width, height, 8
+
+
+def _probe_frame(path: Path) -> _FrameProbe:
+    suffix = path.suffix.lower()
+    if suffix in RAW_EXTENSIONS:
+        frame = load_image(path)
+        height, width = frame.pixels.shape[:2]
+        return _FrameProbe(
+            path=path,
+            width=width,
+            height=height,
+            bit_depth=frame.bit_depth,
+            domain=frame.domain,
+            metadata=frame.metadata,
+            decoder=dict(frame.metadata.decoder),
+        )
+    width, height, depth = _probe_rendered_image(path)
+    return _FrameProbe(
+        path=path,
+        width=width,
+        height=height,
+        bit_depth=depth,
+        domain=ProcessingDomain.RENDERED_RGB,
+    )
+
+
 def validate_stack(paths: list[Path]) -> ValidationReport:
     """Per-file validation report (SPEC §12). Never raises for bad files."""
     report = ValidationReport()
-    reference: Frame | None = None
+    reference: _FrameProbe | None = None
 
     def mismatch(path: Path, status: str, field_name: str, expected: object, actual: object) -> FileStatus:
         return FileStatus(
@@ -157,8 +253,7 @@ def validate_stack(paths: list[Path]) -> ValidationReport:
             f"{field_name}: expected {expected!r}, actual {actual!r}",
         )
 
-    def raw_calibration_missing(frame: Frame) -> list[str]:
-        metadata = frame.metadata
+    def raw_calibration_missing(metadata: ImageMetadata) -> list[str]:
         required = {
             "camera model": metadata.unique_camera_model,
             "black level": metadata.black_level,
@@ -172,7 +267,7 @@ def validate_stack(paths: list[Path]) -> ValidationReport:
     for p in paths:
         p = Path(p)
         try:
-            frame = load_image(p)
+            probe = _probe_frame(p)
         except RawDecodeError as e:
             report.files.append(FileStatus(p, "raw_decode_error", str(e)))
             continue
@@ -188,15 +283,21 @@ def validate_stack(paths: list[Path]) -> ValidationReport:
         except Exception as e:  # noqa: BLE001 - corrupted files land here by design
             report.files.append(FileStatus(p, "unreadable", str(e)))
             continue
-        h, w = frame.pixels.shape[:2]
         if reference is None:
-            reference = frame
-            report.width, report.height, report.bit_depth = w, h, frame.bit_depth
-            report.domain = frame.domain.value
-            report.camera = frame.metadata.unique_camera_model or ""
-            report.decoder = dict(frame.metadata.decoder)
-            if frame.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
-                missing = raw_calibration_missing(frame)
+            reference = probe
+            report.width, report.height, report.bit_depth = (
+                probe.width,
+                probe.height,
+                probe.bit_depth,
+            )
+            report.domain = probe.domain.value
+            report.camera = (probe.metadata.unique_camera_model or "") if probe.metadata is not None else ""
+            report.decoder = dict(probe.decoder)
+            if probe.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
+                if probe.metadata is None:
+                    report.files.append(FileStatus(p, "missing_raw_calibration", "missing metadata"))
+                    continue
+                missing = raw_calibration_missing(probe.metadata)
                 if missing:
                     report.files.append(
                         FileStatus(p, "missing_raw_calibration", "missing: " + ", ".join(missing))
@@ -205,16 +306,19 @@ def validate_stack(paths: list[Path]) -> ValidationReport:
             report.files.append(FileStatus(p, "ok"))
             continue
 
-        if frame.domain is not reference.domain:
+        if probe.domain is not reference.domain:
             report.files.append(
-                mismatch(p, "mixed_domain", "processing domain", reference.domain.value, frame.domain.value)
+                mismatch(p, "mixed_domain", "processing domain", reference.domain.value, probe.domain.value)
             )
             continue
 
-        if frame.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
+        if probe.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
+            if reference.metadata is None or probe.metadata is None:
+                report.files.append(FileStatus(p, "missing_raw_calibration", "missing metadata"))
+                continue
             expected_metadata = reference.metadata
-            actual_metadata = frame.metadata
-            missing = raw_calibration_missing(frame)
+            actual_metadata = probe.metadata
+            missing = raw_calibration_missing(actual_metadata)
             if missing:
                 report.files.append(
                     FileStatus(p, "missing_raw_calibration", "missing: " + ", ".join(missing))
@@ -279,10 +383,18 @@ def validate_stack(paths: list[Path]) -> ValidationReport:
             report.files.append(FileStatus(p, "ok"))
             continue
 
-        if (w, h) != (report.width, report.height):
-            report.files.append(FileStatus(p, "wrong_size", f"{w}x{h} != {report.width}x{report.height}"))
-        elif frame.bit_depth != report.bit_depth:
-            report.files.append(FileStatus(p, "wrong_bit_depth", f"{frame.bit_depth} != {report.bit_depth}"))
+        if (probe.width, probe.height) != (report.width, report.height):
+            report.files.append(
+                FileStatus(
+                    p,
+                    "wrong_size",
+                    f"{probe.width}x{probe.height} != {report.width}x{report.height}",
+                )
+            )
+        elif probe.bit_depth != report.bit_depth:
+            report.files.append(
+                FileStatus(p, "wrong_bit_depth", f"{probe.bit_depth} != {report.bit_depth}")
+            )
         else:
             report.files.append(FileStatus(p, "ok"))
     return report

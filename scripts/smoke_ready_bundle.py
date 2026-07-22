@@ -59,12 +59,12 @@ def _stop_process_tree(process: subprocess.Popen[str]) -> None:
             text=True,
         )
     else:
-        os.killpg(process.pid, signal.SIGTERM)
+        getattr(os, "killpg")(process.pid, signal.SIGTERM)
     try:
         process.wait(timeout=20)
     except subprocess.TimeoutExpired:
         if os.name != "nt":
-            os.killpg(process.pid, signal.SIGKILL)
+            getattr(os, "killpg")(process.pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         process.kill()
         process.wait(timeout=10)
 

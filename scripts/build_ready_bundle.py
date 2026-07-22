@@ -147,7 +147,10 @@ def _zip_tree(source: Path, output: Path, epoch: int) -> None:
             info = zipfile.ZipInfo(relative.as_posix(), date_time=date_time)
             info.create_system = 3
             info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = (path.stat().st_mode & 0xFFFF) << 16
+            mode = path.stat().st_mode & 0xFFFF
+            if path.name == "uv" or path.suffix in {".command", ".sh"}:
+                mode |= stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            info.external_attr = mode << 16
             with path.open("rb") as handle:
                 archive.writestr(info, handle.read(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
 

@@ -52,3 +52,36 @@ def test_recovered_transforms_match_ground_truth(tmp_path, seed):
         # translation error: SPEC's 0.5 px gate at full resolution
         assert abs(est_full[0, 2] - gt[0, 2]) < 0.5, f"frame {k}: dx off"
         assert abs(est_full[1, 2] - gt[1, 2]) < 0.5, f"frame {k}: dy off"
+
+
+def _max_trans_err(stack, report):
+    """Worst-frame full-resolution translation error (px) vs ground truth."""
+    ref = report.reference
+    worst = 0.0
+    for k in range(len(stack.frames)):
+        gt = invert(stack.transforms[k]) @ stack.transforms[ref]
+        est = scale_transform_to_resolution(report.matrices[k], report.proxy_factor)
+        worst = max(worst, abs(est[0, 2] - gt[0, 2]), abs(est[1, 2] - gt[1, 2]))
+    return worst
+
+
+def test_full_res_refine_beats_proxy_only_on_a_heavy_downscale(tmp_path):
+    # A large frame estimated through a 5x-smaller proxy loses sub-pixel precision
+    # when the proxy translation is scaled back up. Full-res refinement recovers
+    # it: error never worse, and sub-pixel-exact in absolute terms (mirrors the
+    # 61MP/2048-proxy regime where factor ~4.6).
+    stack = generate_stack(h=1200, w=1500, n_frames=5, max_sigma=3.0, seed=42,
+                           scale_step=0.003, rot_jitter=0.01, trans_jitter=3.0)
+    src = ArrayFrameSource(stack.frames)
+    dev = get_device("cpu")
+
+    coarse = align_stack(src, cache_dir=tmp_path / "coarse", device=dev,
+                         params=AlignParams(max_long_edge=300, refine_full_res=False))
+    refined = align_stack(src, cache_dir=tmp_path / "refined", device=dev,
+                          params=AlignParams(max_long_edge=300, refine_full_res=True))
+
+    assert refined.proxy_factor == 1.0          # matrices already full-resolution
+    err_coarse = _max_trans_err(stack, coarse)
+    err_refined = _max_trans_err(stack, refined)
+    assert err_refined <= err_coarse            # full-res polish never worse
+    assert err_refined < 0.05                   # sub-pixel-exact at full resolution

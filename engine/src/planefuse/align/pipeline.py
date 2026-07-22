@@ -29,6 +29,7 @@ class AlignParams:
     reference: int | None = None
     drop_misaligned: bool = False
     skip: bool = False
+    refine_full_res: bool = False  # warm-started ECC polish at native resolution
 
 
 @dataclass
@@ -40,6 +41,7 @@ class AlignReport:
     recovered: set[int]
     dropped: set[int]
     cache: AlignedCache
+    proxy_factor: float  # resolution of `matrices`: 1.0 when full-res-refined
 
 
 def align_stack(source: FrameSource, cache_dir: Path, device: Device,
@@ -67,7 +69,7 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
             _tick(idx, f"copy {idx + 1}/{n}")
             frame = source.read(idx)
             cache.write(idx, frame, np.ones(frame.shape[:2], dtype=bool))
-        return AlignReport(ref, [np.eye(3) for _ in range(n)], {}, set(), set(), set(), cache)
+        return AlignReport(ref, [np.eye(3) for _ in range(n)], {}, set(), set(), set(), cache, 1.0)
 
     # estimate consecutive pairs (i, i+1): transform maps (i+1) -> i
     pair: dict[int, np.ndarray] = {}
@@ -80,7 +82,8 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
                            normalize_brightness=params.normalize_brightness,
                            normalize_scene_linear=(
                                source.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB
-                           ))
+                           ),
+                           refine_full_res=params.refine_full_res)
         pair[i] = pr.matrix
         corr[i] = pr.correlation
         factor = pr.proxy_factor
@@ -153,6 +156,7 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
             normalize_scene_linear=(
                 source.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB
             ),
+            refine_full_res=params.refine_full_res,
         )
         if direct.correlation >= params.correlation_threshold:
             matrices[frame_idx] = direct.matrix
@@ -183,7 +187,8 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
                                    normalize_scene_linear=(
                                        source.domain
                                        is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB
-                                   ))
+                                   ),
+                                   refine_full_res=params.refine_full_res)
                 eff_pair[j] = pr.matrix
 
         sub = chain_to_reference(len(survivors), eff_pair,
@@ -206,4 +211,4 @@ def align_stack(source: FrameSource, cache_dir: Path, device: Device,
 
     if progress is not None:
         progress("done", 1.0)
-    return AlignReport(ref, matrices, corr, flagged, recovered, dropped, cache)
+    return AlignReport(ref, matrices, corr, flagged, recovered, dropped, cache, factor)

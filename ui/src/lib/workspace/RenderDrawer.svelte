@@ -8,6 +8,30 @@
 
   let retouchBusy = $state<Record<string, boolean>>({});
   let retouchError = $state('');
+  let saveBusy = $state<Record<string, boolean>>({});
+
+  // Save a result as a 16-bit TIFF in the same folder as the source frames.
+  async function saveNextToOriginals(result: { id: string; method: string }) {
+    if (!appState.project) return;
+    const src = appState.project.frames[0] ?? appState.inputs[0]?.path;
+    if (!src) { retouchError = 'No source frame to locate a folder'; return; }
+    const cut = Math.max(src.lastIndexOf('\\'), src.lastIndexOf('/'));
+    const dir = src.slice(0, cut);
+    const sep = src.includes('\\') ? '\\' : '/';
+    const dest = `${dir}${sep}focusstack-${result.method}-${result.id.slice(0, 8)}.tif`;
+    saveBusy[result.id] = true;
+    retouchError = '';
+    try {
+      const { id } = await api.export(appState.project.id, {
+        image_id: result.id, dest, format: 'tif', bit_depth: 16
+      });
+      appState.exportJobId = id; // header shows progress + final dest path
+    } catch (e) {
+      retouchError = (e as Error).message;
+    } finally {
+      saveBusy[result.id] = false;
+    }
+  }
 
   async function openRetouch(resultId: string) {
     if (!appState.project) return;
@@ -133,6 +157,15 @@
           {/if}
           <span class="result-label mono">{result.label}</span>
           <div class="result-actions">
+            <button
+              class="ghost action-btn"
+              data-testid="save-result"
+              title="Save a 16-bit TIFF next to the original frames"
+              disabled={saveBusy[result.id]}
+              onclick={(e) => { e.stopPropagation(); saveNextToOriginals(result); }}
+            >
+              {saveBusy[result.id] ? 'Saving…' : 'Save'}
+            </button>
             <button
               class="ghost action-btn"
               data-testid="retouch-this-result"

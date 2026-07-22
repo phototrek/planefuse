@@ -20,7 +20,7 @@ def atomic_output(destination: Path) -> Iterator[Path]:
     temporary = Path(name)
     try:
         yield temporary
-        with temporary.open("rb") as stream:
+        with temporary.open("r+b") as stream:
             os.fsync(stream.fileno())
         os.replace(temporary, destination)
         try:
