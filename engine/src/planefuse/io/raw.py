@@ -61,6 +61,22 @@ def _exifread(path: Path) -> dict[str, Any]:
         return {}
 
 
+def _exiftool_tags(path: Path) -> dict[str, Any]:
+    """Fallback for ISOBMFF RAWs (CR3) that exifread cannot parse; needs exiftool on PATH."""
+    import json, subprocess
+    try:
+        out = subprocess.run(["exiftool", "-j", "-n", "-Make", "-Model", "-DateTimeOriginal",
+                              "-LensModel", "-SerialNumber", str(path)],
+                             capture_output=True, text=True, timeout=30).stdout
+        d = json.loads(out)[0]
+    except Exception:  # noqa: BLE001
+        return {}
+    m = {"Image Make": d.get("Make"), "Image Model": d.get("Model"),
+         "EXIF DateTimeOriginal": d.get("DateTimeOriginal"), "EXIF LensModel": d.get("LensModel"),
+         "Image BodySerialNumber": d.get("SerialNumber")}
+    return {k: str(v) for k, v in m.items() if v not in (None, "")}
+
+
 def _first(values: dict[str, Any], *keys: str) -> str | None:
     for key in keys:
         value = values.get(key)
@@ -104,12 +120,16 @@ def load_raw(path: Path):
 
     tags = _tag_values(path)
     portable = read_metadata(path)
-    exifread_tags = _exifread(path)
+    exifread_tags = _exifread(path) or _exiftool_tags(path)
     exif = dict(portable.exif)
     exif.update({f"ExifRead.{key}": value for key, value in exifread_tags.items()})
     make = _text(tags.get(271)) or _first(exifread_tags, "Image Make", "Make")
     model = _text(tags.get(272)) or _first(exifread_tags, "Image Model", "Model")
-    unique_model = _text(tags.get(50708)) or " ".join(part for part in (make, model) if part) or None
+    # Canon (and others) already put the make into the model string; do not repeat it.
+    unique_model = _text(tags.get(50708)) or (
+        model if (make and model and model.lower().startswith(make.lower())) else
+        " ".join(part for part in (make, model) if part)
+    ) or None
     xmp_bytes = portable.raw_xmp
     if tags.get(700) is not None:
         xmp_bytes = bytes(tags[700])
