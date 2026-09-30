@@ -14,12 +14,26 @@ from pathlib import Path
 
 import numpy as np
 import tifffile
+import torch
 
 from planefuse.errors import ValidationError
 from planefuse.io import load_image, save_image
 from planefuse.io.atomic import atomic_output
 from planefuse.io.metadata import ImageMetadata, ProcessingDomain
 from planefuse.stack.sources import Region, _crop  # noqa: SLF001
+
+
+def cache_equivalent(aligned: torch.Tensor, domain: ProcessingDomain) -> torch.Tensor:
+    """The values AlignedCache.write then read would hand back for `aligned`
+    ((3, H, W) float32), computed where the tensor lives.
+
+    Scene-linear frames are stored as float32 (lossless), so they come back
+    unchanged; rendered frames are clipped to [0, 1] and stored as 16-bit, so
+    they come back quantized exactly as save_image + load_image do it.
+    """
+    if domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
+        return aligned
+    return torch.floor(aligned.clamp(0.0, 1.0) * 65535.0 + 0.5) / 65535.0
 
 
 class _CachedSource:

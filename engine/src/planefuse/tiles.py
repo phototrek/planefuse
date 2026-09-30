@@ -10,6 +10,7 @@ import numpy as np
 from planefuse.backend import Device
 from planefuse.stack.base import FrameSource
 from planefuse.stack.pyramid import pyramid_depth
+from planefuse.stack.sources import read_tensor
 
 
 @dataclass(frozen=True)
@@ -91,12 +92,18 @@ class _RegionSource:
     def source_hash(self) -> str:
         return self._inner.source_hash
 
-    def read(self, idx: int, region=None) -> np.ndarray:
+    def _abs(self, region) -> tuple[int, int, int, int]:
         t = self._t
         if region is None:
-            return self._inner.read(idx, region=(t.y0, t.x0, t.y1, t.x1))
+            return (t.y0, t.x0, t.y1, t.x1)
         y0, x0, y1, x1 = region
-        return self._inner.read(idx, region=(t.y0 + y0, t.x0 + x0, t.y0 + y1, t.x0 + x1))
+        return (t.y0 + y0, t.x0 + x0, t.y0 + y1, t.x0 + x1)
+
+    def read(self, idx: int, region=None) -> np.ndarray:
+        return self._inner.read(idx, region=self._abs(region))
+
+    def read_tensor(self, idx: int, region=None):
+        return read_tensor(self._inner, idx, self._abs(region))
 
 
 def stack_tiled(
@@ -112,9 +119,13 @@ def stack_tiled(
 ) -> np.ndarray:
     from planefuse.stack.base import get_algorithm  # local import avoids cycle
 
-    probe = source.read(0)
-    h, w, c = probe.shape
-    del probe
+    held = read_tensor(source, 0)
+    if held is not None:
+        c, h, w = held.shape
+    else:
+        probe = source.read(0)
+        h, w, c = probe.shape
+        del probe
     full_depth = pyramid_depth(h, w)
     # SPEC §8: pyramid algorithms need overlap >= 2^depth to avoid seams
     overlap = max(overlap, 2**full_depth)

@@ -25,6 +25,7 @@ from planefuse.stack.base import (
     register,
 )
 from planefuse.stack.pyramid import build_laplacian, collapse_laplacian, pyramid_depth
+from planefuse.stack.sources import read_tensor
 
 _NEG_INF = float("-inf")
 
@@ -38,10 +39,18 @@ class _FoldState:
     res_den: torch.Tensor  # residual weight sum   (1, h_r, w_r)
 
 
+def _read_frame(source: FrameSource, idx: int) -> np.ndarray | torch.Tensor:
+    """The frame as the tensor the source holds, else as numpy."""
+    held = read_tensor(source, idx)
+    return held if held is not None else source.read(idx)
+
+
 def _frame_pyramid(
-    frame_np: np.ndarray, device: Device, depth: int
+    frame_np: np.ndarray | torch.Tensor, device: Device, depth: int
 ) -> tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor, torch.Tensor]:
-    """Convert a numpy frame to a Laplacian pyramid with per-level energy maps.
+    """Convert a frame ((H, W, C) numpy, or a held (C, H, W) tensor, which is
+    used in place when already on `device`) to a Laplacian pyramid with
+    per-level energy maps.
 
     Returns:
         lap       - Laplacian coefficient tensors (C, h_l, w_l)
@@ -49,7 +58,10 @@ def _frame_pyramid(
         residual  - coarsest Gaussian level (C, h_r, w_r)
         res_weight - soft weight for residual contribution (1, h_r, w_r)
     """
-    t = ops.to_tensor(frame_np, device)
+    if isinstance(frame_np, torch.Tensor):
+        t = frame_np.to(device.torch_device)
+    else:
+        t = ops.to_tensor(frame_np, device)
     lap, residual = build_laplacian(t, depth)
     energies = [ops.local_energy(lvl) for lvl in lap]
     # Residual weight: smoothed magnitude of high-frequency content at coarsest
@@ -58,7 +70,12 @@ def _frame_pyramid(
     return lap, energies, residual, res_weight
 
 
-def _mask_levels(mask_np: np.ndarray, device: Device, depth: int) -> list[torch.Tensor]:
+def _read_mask(masks: FrameSource, idx: int) -> np.ndarray | torch.Tensor:
+    held = read_tensor(masks, idx)
+    return held if held is not None else masks.read(idx)
+
+
+def _mask_levels(mask_np: np.ndarray | torch.Tensor, device: Device, depth: int) -> list[torch.Tensor]:
     """Downsample a boolean validity mask through the pyramid levels.
 
     Returns one boolean tensor per Laplacian level (depth tensors) then one for
@@ -66,7 +83,10 @@ def _mask_levels(mask_np: np.ndarray, device: Device, depth: int) -> list[torch.
     A pixel is considered valid when the averaged mask value exceeds 0.5.
     """
     # Work with (1, H, W) float so we can reuse downsample2 (which expects C,H,W)
-    m = torch.from_numpy(mask_np.astype(np.float32)).unsqueeze(0).to(device.torch_device)
+    if isinstance(mask_np, torch.Tensor):
+        m = mask_np.to(device=device.torch_device, dtype=torch.float32).unsqueeze(0)
+    else:
+        m = torch.from_numpy(mask_np.astype(np.float32)).unsqueeze(0).to(device.torch_device)
     levels: list[torch.Tensor] = []
     for _ in range(depth + 1):  # depth Laplacian levels + 1 residual level
         levels.append(m > 0.5)
@@ -107,8 +127,8 @@ class PMax:
     ) -> StackResult:
         smoothing = int(params.get("selection_smoothing", 1))
         n = len(source)
-        first = source.read(0)
-        h, w = first.shape[:2]
+        first = _read_frame(source, 0)
+        h, w = first.shape[-2:] if isinstance(first, torch.Tensor) else first.shape[:2]
         depth = int(params.get("_pyramid_depth") or pyramid_depth(h, w))
 
         # total_steps: n (fold pass) + n (halo pass, if needed) + 1 (collapse)
@@ -129,14 +149,14 @@ class PMax:
         # ------------------------------------------------------------------ #
         for idx in range(n):
             _tick(idx, f"PMax fold {idx + 1}/{n}")
-            frame = first if idx == 0 else source.read(idx)
+            frame = first if idx == 0 else _read_frame(source, idx)
             lap, energies, residual, res_w = _frame_pyramid(frame, device, depth)
 
             # Apply validity masks by zeroing energy in invalid regions so those
             # pixels can never win, and by zeroing the residual weight contribution.
             mlv: list[torch.Tensor] | None = None
             if masks is not None:
-                mlv = _mask_levels(masks.read(idx), device, depth)
+                mlv = _mask_levels(_read_mask(masks, idx), device, depth)
                 energies = [e.masked_fill(~m, _NEG_INF) for e, m in zip(energies, mlv[:depth])]
                 res_w = res_w * mlv[depth].to(res_w.dtype)
 
@@ -181,8 +201,8 @@ class PMax:
 
                 for idx in range(n):
                     _tick(n + idx, f"PMax halo pass {idx + 1}/{n}")
-                    lap, _, _, _ = _frame_pyramid(source.read(idx), device, depth)
-                    mlv = _mask_levels(masks.read(idx), device, depth) if masks is not None else None
+                    lap, _, _, _ = _frame_pyramid(_read_frame(source, idx), device, depth)
+                    mlv = _mask_levels(_read_mask(masks, idx), device, depth) if masks is not None else None
                     for lvl in range(depth):
                         # Pixels that changed winner to this frame index.
                         sel = changed[lvl] & (filtered[lvl] == idx)

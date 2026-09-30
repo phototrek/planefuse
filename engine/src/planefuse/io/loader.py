@@ -217,20 +217,29 @@ def _probe_rendered_image(path: Path) -> tuple[int, int, int]:
         return width, height, 8
 
 
-def _probe_frame(path: Path) -> _FrameProbe:
+def _probe_from_frame(path: Path, frame: Frame) -> _FrameProbe:
+    height, width = frame.pixels.shape[:2]
+    return _FrameProbe(
+        path=path,
+        width=width,
+        height=height,
+        bit_depth=frame.bit_depth,
+        domain=frame.domain,
+        metadata=frame.metadata,
+        decoder=dict(frame.metadata.decoder),
+    )
+
+
+def _probe_frame(path: Path, loaded: Frame | BaseException | None = None) -> _FrameProbe:
+    """Probe one file. A RAW file is probed by decoding it; when the caller has
+    already decoded it, `loaded` (the Frame, or the exception its decode raised)
+    stands in for that decode so the file is not decoded twice."""
     suffix = path.suffix.lower()
     if suffix in RAW_EXTENSIONS:
-        frame = load_image(path)
-        height, width = frame.pixels.shape[:2]
-        return _FrameProbe(
-            path=path,
-            width=width,
-            height=height,
-            bit_depth=frame.bit_depth,
-            domain=frame.domain,
-            metadata=frame.metadata,
-            decoder=dict(frame.metadata.decoder),
-        )
+        if isinstance(loaded, BaseException):
+            raise loaded
+        frame = loaded if loaded is not None else load_image(path)
+        return _probe_from_frame(path, frame)
     width, height, depth = _probe_rendered_image(path)
     return _FrameProbe(
         path=path,
@@ -241,8 +250,40 @@ def _probe_frame(path: Path) -> _FrameProbe:
     )
 
 
-def validate_stack(paths: list[Path]) -> ValidationReport:
-    """Per-file validation report (SPEC §12). Never raises for bad files."""
+def probe_frame_shape(path: Path) -> tuple[int, int] | None:
+    """Cheap (height, width) of the decoded frame, without decoding pixels.
+
+    Used only to size memory budgets; returns None when the header cannot be
+    read (validation reports the file properly).
+    """
+    path = Path(path)
+    try:
+        if path.suffix.lower() in RAW_EXTENSIONS:
+            import rawpy
+
+            with rawpy.imread(str(path)) as raw:
+                sizes = raw.sizes
+                height, width = int(sizes.iheight), int(sizes.iwidth)
+                if int(getattr(sizes, "flip", 0) or 0) in (5, 6):
+                    height, width = width, height
+                return height, width
+        width, height, _depth = _probe_rendered_image(path)
+        return height, width
+    except Exception:  # noqa: BLE001 - a sizing probe must never fail the job
+        return None
+
+
+def validate_stack(
+    paths: list[Path],
+    loaded: list[Frame | BaseException | None] | None = None,
+) -> ValidationReport:
+    """Per-file validation report (SPEC §12). Never raises for bad files.
+
+    `loaded`, when given, holds each path's already-decoded Frame (or the
+    exception its decode raised), index-aligned with `paths`; RAW files are then
+    validated from it instead of being decoded again. The checks and messages
+    are the same either way.
+    """
     report = ValidationReport()
     reference: _FrameProbe | None = None
 
@@ -264,10 +305,10 @@ def validate_stack(paths: list[Path]) -> ValidationReport:
         }
         return [name for name, value in required.items() if value is None]
 
-    for p in paths:
+    for index, p in enumerate(paths):
         p = Path(p)
         try:
-            probe = _probe_frame(p)
+            probe = _probe_frame(p, loaded[index] if loaded is not None else None)
         except RawDecodeError as e:
             report.files.append(FileStatus(p, "raw_decode_error", str(e)))
             continue

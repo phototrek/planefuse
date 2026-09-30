@@ -25,13 +25,18 @@ def make_proxy(
     max_long_edge: int = 2048,
     *,
     normalize_scene_linear: bool = False,
+    neutral: np.ndarray | None = None,
 ) -> tuple[torch.Tensor, float]:
     """(H, W, 3) numpy -> ((1, h, w) luminance tensor, downscale_factor).
 
     factor = original_long_edge / proxy_long_edge >= 1.0 (never upscales).
+    `neutral`, with normalize_scene_linear, is scene_linear_proxy_luminance(frame)
+    already computed by the caller (it is host-only work, so callers may build
+    it on worker threads); `frame` is then not read.
     """
     if normalize_scene_linear:
-        neutral = scene_linear_proxy_luminance(frame)
+        if neutral is None:
+            neutral = scene_linear_proxy_luminance(frame)
         lum = torch.from_numpy(neutral[None]).to(device.torch_device)
     else:
         t = ops.to_tensor(frame, device)

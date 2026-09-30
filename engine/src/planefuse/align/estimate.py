@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from contextlib import nullcontext
 from dataclasses import dataclass
 
 from planefuse.align.initial import estimate_scale_rotation, estimate_translation
@@ -63,39 +65,53 @@ def estimate_pair(frame_a: np.ndarray, frame_b: np.ndarray, device: Device,
                   max_long_edge: int = 2048, model: str = "similarity",
                   normalize_brightness: bool = True,
                   normalize_scene_linear: bool = False,
-                  refine_full_res: bool = False) -> PairResult:
+                  refine_full_res: bool = False,
+                  *,
+                  proxy_a: tuple[torch.Tensor, float] | None = None,
+                  proxy_b: tuple[torch.Tensor, float] | None = None,
+                  device_lock: threading.Lock | None = None) -> PairResult:
     """Estimate the transform warping frame_b onto frame_a (consecutive pair).
 
     With `refine_full_res`, a warm-started ECC polish is run at the frames'
     native resolution and the returned matrix is full-res (proxy_factor 1.0).
+
+    `proxy_a` / `proxy_b` are make_proxy(frame, device, max_long_edge,
+    normalize_scene_linear=...) results the caller already built (a stack
+    builds each frame's proxy once); omitted, they are built here.
+
+    `device_lock`: callers running several estimates on threads pass one
+    shared lock; the device-side work then runs under it, so the torch device
+    is never driven from two threads at once, while the CPU-side ECC solves
+    run in parallel. None (sequential callers) takes no lock.
     """
-    pa, factor = make_proxy(
-        frame_a,
-        device,
-        max_long_edge,
-        normalize_scene_linear=normalize_scene_linear,
-    )
-    pb, _ = make_proxy(
-        frame_b,
-        device,
-        max_long_edge,
-        normalize_scene_linear=normalize_scene_linear,
-    )
-    h, w = pa.shape[-2:]
-    cx, cy = (w - 1) / 2.0, (h - 1) / 2.0
+    with device_lock if device_lock is not None else nullcontext():
+        pa, factor = proxy_a if proxy_a is not None else make_proxy(
+            frame_a,
+            device,
+            max_long_edge,
+            normalize_scene_linear=normalize_scene_linear,
+        )
+        pb, _ = proxy_b if proxy_b is not None else make_proxy(
+            frame_b,
+            device,
+            max_long_edge,
+            normalize_scene_linear=normalize_scene_linear,
+        )
+        h, w = pa.shape[-2:]
+        cx, cy = (w - 1) / 2.0, (h - 1) / 2.0
 
-    if model == "translation":
-        dy, dx = estimate_translation(pa, pb)
-        init = translation_matrix(dx, dy)
-    else:
-        scale, angle = estimate_scale_rotation(pa, pb)
-        sr = similarity_matrix(scale, angle, 0.0, 0.0, cx, cy)
-        pb_corr = ops.warp(pb, _to_tensor3(sr, device), out_shape=(h, w), interp="bilinear")
-        dy, dx = estimate_translation(pa, pb_corr)
-        init = translation_matrix(dx, dy) @ sr
+        if model == "translation":
+            dy, dx = estimate_translation(pa, pb)
+            init = translation_matrix(dx, dy)
+        else:
+            scale, angle = estimate_scale_rotation(pa, pb)
+            sr = similarity_matrix(scale, angle, 0.0, 0.0, cx, cy)
+            pb_corr = ops.warp(pb, _to_tensor3(sr, device), out_shape=(h, w), interp="bilinear")
+            dy, dx = estimate_translation(pa, pb_corr)
+            init = translation_matrix(dx, dy) @ sr
 
-    a_np = pa.squeeze(0).cpu().numpy()
-    b_np = pb.squeeze(0).cpu().numpy()
+        a_np = pa.squeeze(0).cpu().numpy()
+        b_np = pb.squeeze(0).cpu().numpy()
     m, corr = refine_ecc(a_np, b_np, init=init, cx=cx, cy=cy, model=model)
     if model == "translation":
         m[:2, :2] = np.eye(2)  # enforce translation model

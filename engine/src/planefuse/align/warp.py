@@ -12,12 +12,17 @@ from planefuse.backend import Device, ops
 
 def warp_full(frame: np.ndarray, matrix_proxy: np.ndarray, device: Device,
               out_shape: tuple[int, int], proxy_factor: float,
-              interp: str = "bilinear") -> tuple[np.ndarray, np.ndarray]:
+              interp: str = "bilinear", *,
+              keep_on_device: bool = False,
+              ) -> tuple[np.ndarray, np.ndarray] | tuple[torch.Tensor, torch.Tensor]:
     """Warp a full-res (H, W, 3) frame by a proxy-resolution transform.
 
     Returns (aligned (H, W, 3) float32, validity mask (H, W) bool). Out-of-frame
     pixels are edge-clamped in the image and False in the mask, so stacking can
     exclude them (PMax forces their energy to -inf via masks=).
+
+    With `keep_on_device`, returns tensors left on the device instead:
+    (aligned (3, H, W) float32, mask (H, W) bool).
     """
     m_full = scale_transform_to_resolution(matrix_proxy, proxy_factor)
     t = ops.to_tensor(frame, device)
@@ -32,5 +37,7 @@ def warp_full(frame: np.ndarray, matrix_proxy: np.ndarray, device: Device,
     )
     sampled = F.grid_sample(ones.unsqueeze(0), grid, mode="bilinear",
                             padding_mode="zeros", align_corners=True)
-    mask = (sampled.squeeze(0).squeeze(0) > 0.999).cpu().numpy()
-    return ops.to_numpy(aligned), mask
+    valid = sampled.squeeze(0).squeeze(0) > 0.999
+    if keep_on_device:
+        return aligned, valid
+    return ops.to_numpy(aligned), valid.cpu().numpy()

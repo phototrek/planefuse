@@ -6,7 +6,12 @@ from planefuse.stack.base import (
     get_algorithm,
     register,
 )
-from planefuse.stack.sources import ArrayFrameSource, DirFrameSource
+from planefuse.stack.sources import (
+    ArrayFrameSource,
+    DirFrameSource,
+    MemoryFrameSource,
+    TensorFrameSource,
+)
 import planefuse.stack.pmax  # noqa: E402,F401  (registers "pmax")
 import planefuse.stack.dmap  # noqa: E402,F401  (registers "dmap")
 import planefuse.stack.weighted  # noqa: E402,F401  (registers "weighted")
@@ -17,8 +22,10 @@ __all__ = [
     "ArrayFrameSource",
     "DirFrameSource",
     "FrameSource",
+    "MemoryFrameSource",
     "ParamSpec",
     "StackResult",
+    "TensorFrameSource",
     "get_algorithm",
     "register",
 ]
