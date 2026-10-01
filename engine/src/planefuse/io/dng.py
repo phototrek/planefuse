@@ -95,7 +95,9 @@ def _write_dng(
         (50706, 1, 4, _DNG_VERSION, False),
         (50707, 1, 4, _DNG_BACKWARD_VERSION, False),
         _ascii_tag(50708, metadata.unique_camera_model or model),
-        (50714, 5, 3, _rational_data((black_code,) * 3, signed=False), False),
+        # BlackLevel is an integer code; over the 1e6 denominator _rational_data uses, a
+        # stack whose minimum is well below zero overflows the 32-bit RATIONAL numerator.
+        (50714, 5, 3, (black_code, 1) * 3, False),
         (50717, 4, 3, (white_code,) * 3, False),
         (50718, 5, 2, _rational_data((1.0, 1.0), signed=False), False),
         (50719, 4, 2, (0, 0), False),

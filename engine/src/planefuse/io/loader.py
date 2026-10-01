@@ -261,7 +261,17 @@ def probe_frame_shape(path: Path) -> tuple[int, int] | None:
         if path.suffix.lower() in RAW_EXTENSIONS:
             import rawpy
 
-            with rawpy.imread(str(path)) as raw:
+            from planefuse.io.raw import linear_dng_has_opcodes, linear_dng_shape
+
+            if path.suffix.lower() == ".dng" and linear_dng_has_opcodes(path):
+                return linear_dng_shape(path)
+            try:
+                raw_context = rawpy.imread(str(path))
+            except rawpy.LibRawFileUnsupportedError:
+                if path.suffix.lower() != ".dng":
+                    raise
+                return linear_dng_shape(path)
+            with raw_context as raw:
                 sizes = raw.sizes
                 height, width = int(sizes.iheight), int(sizes.iwidth)
                 if int(getattr(sizes, "flip", 0) or 0) in (5, 6):

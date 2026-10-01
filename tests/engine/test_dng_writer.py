@@ -9,7 +9,7 @@ from planefuse.errors import DiskSpaceError, DngExportError
 from planefuse.io import load_raw
 from planefuse.io.dng import save_linear_dng, validate_linear_dng
 from planefuse.io.metadata import parse_xmp_packet
-from tests.engine.test_raw_loader import write_test_raw
+from tests.engine.test_raw_loader import write_linear_dng, write_test_raw
 
 
 def test_linear_dng_roundtrips_pixels_tags_and_provenance(tmp_path: Path):
@@ -99,3 +99,40 @@ def test_linear_dng_reports_insufficient_atomic_output_space(tmp_path: Path, mon
     with pytest.raises(DiskSpaceError, match="not enough free space"):
         save_linear_dng(np.zeros((8, 8, 3), dtype=np.float32), destination, metadata, {})
     assert not destination.exists()
+
+
+def test_linear_dng_black_level_fits_a_rational_when_the_minimum_is_deeply_negative(tmp_path: Path):
+    # A stack of linear renders (DxO DNGs) can undershoot to -0.2: the black code is then
+    # 10922, which as a RATIONAL over a 1e6 denominator overflowed the 32-bit numerator.
+    metadata = load_raw(write_test_raw(tmp_path / "source.dng")).metadata
+    image = np.full((24, 30, 3), 0.5, dtype=np.float32)
+    image[0, 0] = -0.2
+    image[0, 1] = 1.0
+    destination = tmp_path / "undershoot.dng"
+
+    report = save_linear_dng(image, destination, metadata, {})
+
+    assert report.encoding_offset == pytest.approx(-0.2)
+    assert report.encoding_span == pytest.approx(1.2)
+    expected_black = round(0.2 / 1.2 * 65535.0)
+    with tifffile.TiffFile(destination) as tif:
+        page = tif.pages[0]
+        assert page.tags[50714].value == (expected_black, 1) * 3
+        white_code = int(page.tags[50717].value[0])
+        encoded = page.asarray()
+    assert int(encoded[0, 0, 0]) == 0
+    assert int(encoded[0, 1, 0]) == white_code
+
+
+def test_linear_dng_carries_a_linear_dng_sources_baseline_exposure(tmp_path: Path):
+    samples = np.random.default_rng(5).integers(0, 65535, size=(32, 40, 3), dtype=np.uint16)
+    source = write_linear_dng(tmp_path / "render.dng", samples, compression="jpegxl", baseline_exposure=(52, 100))
+    metadata = load_raw(source).metadata
+    assert metadata.baseline_exposure == pytest.approx(0.52)
+    destination = tmp_path / "stacked.dng"
+
+    save_linear_dng(samples.astype(np.float32) / 65535.0, destination, metadata, {})
+
+    with tifffile.TiffFile(destination) as tif:
+        numerator, denominator = tif.pages[0].tags[50730].value
+    assert numerator / denominator == pytest.approx(0.52)
