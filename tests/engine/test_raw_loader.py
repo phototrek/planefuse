@@ -122,6 +122,7 @@ _LINEAR_DNG_COMPRESSIONS = {
     "deflate": {"compression": "adobe_deflate", "tile": (16, 16)},
     "deflate-strips": {"compression": "adobe_deflate", "rowsperstrip": 8},
     "ljpeg": {"compression": "jpeg", "compressionargs": {"lossless": True, "bitspersample": 16}},
+    "ljpeg12": {"compression": "jpeg", "compressionargs": {"lossless": True, "bitspersample": 12}},
     "jpegxl": {"compression": "jpegxl_dng", "tile": (16, 16)},
 }
 
@@ -132,12 +133,14 @@ def write_linear_dng(
     *,
     compression: str,
     black: int = 0,
-    white: int = 65535,
+    white: int | None = 65535,
     orientation: int = 1,
     photometric: int = 34892,
     opcode_lists: dict[int, bytes] | None = None,
     baseline_exposure: tuple[int, int] | None = None,
     linearization: tuple[int, ...] | None = None,
+    planar: bool = False,
+    raw_tag_overrides: tuple[tuple, ...] = (),
 ) -> Path:
     """A DNG laid out like a DxO PhotoLab render: a small RGB preview in IFD0 carrying the
     camera tags, and the full-resolution image (a _LINEAR_DNG_COMPRESSIONS key) in a SubIFD."""
@@ -163,8 +166,11 @@ def write_linear_dng(
     raw_tags = [
         (50713, 3, 2, (1, 1), False),
         (50714, 5, samples, (black, 1) * samples, False),
-        (50717, 4, samples, (white,) * samples, False),
     ]
+    if white is not None:
+        raw_tags.append((50717, 4, samples, (white,) * samples, False))
+    overridden = {tag[0] for tag in raw_tag_overrides}
+    raw_tags = [tag for tag in raw_tags if tag[0] not in overridden] + list(raw_tag_overrides)
     if linearization is not None:
         raw_tags.append((50712, 3, len(linearization), linearization, False))
     for code, blob in (opcode_lists or {}).items():
@@ -180,9 +186,9 @@ def write_linear_dng(
         )
         options = _LINEAR_DNG_COMPRESSIONS[compression]
         writer.write(
-            pixels,
+            np.ascontiguousarray(np.moveaxis(pixels, 2, 0)) if planar else pixels,
             photometric=photometric,
-            planarconfig="contig" if samples > 1 else None,
+            planarconfig=("separate" if planar else "contig") if samples > 1 else None,
             subfiletype=0,
             extrasamples=False,
             metadata=None,
@@ -192,21 +198,28 @@ def write_linear_dng(
     return path
 
 
-def opcode(opcode_id: int, params: bytes, *, optional: bool = False) -> bytes:
-    return struct.pack(">I4sII", opcode_id, b"\x01\x03\x00\x00", int(optional), len(params)) + params
+def opcode(
+    opcode_id: int, params: bytes, *, optional: bool = False, version: bytes = b"\x01\x03\x00\x00"
+) -> bytes:
+    return struct.pack(">I4sII", opcode_id, version, int(optional), len(params)) + params
 
 
 def opcode_list(*opcodes: bytes) -> bytes:
     return struct.pack(">I", len(opcodes)) + b"".join(opcodes)
 
 
-def map_polynomial(area, plane, planes, pitch, coefficients) -> bytes:
+def map_polynomial(area, plane, planes, pitch, coefficients, **header) -> bytes:
     top, left, bottom, right = area
     return opcode(
         8,
         struct.pack(">9I", top, left, bottom, right, plane, planes, pitch[0], pitch[1], len(coefficients) - 1)
         + struct.pack(f">{len(coefficients)}d", *coefficients),
+        **header,
     )
+
+
+# y = x on every plane: routes a DNG to the tifffile reader without changing its pixels.
+IDENTITY = map_polynomial((0, 0, 65535, 65535), 0, 3, (1, 1), (0.0, 1.0))
 
 
 def _linear_samples(height: int = 48, width: int = 64, low: int = 0, high: int = 65535) -> np.ndarray:
@@ -233,8 +246,12 @@ def test_jpegxl_linear_dng_decodes_without_libraw(tmp_path: Path):
 @pytest.mark.parametrize("orientation", [1, 8])
 def test_jpegxl_linear_dng_frame_equals_libraw_frame_of_uncompressed_twin(tmp_path: Path, orientation: int):
     samples = _linear_samples()
-    jxl = load_raw(write_linear_dng(tmp_path / "jxl.dng", samples, compression="jpegxl", orientation=orientation))
-    plain = load_raw(write_linear_dng(tmp_path / "plain.dng", samples, compression="none", orientation=orientation))
+    jxl = load_raw(
+        write_linear_dng(tmp_path / "jxl.dng", samples, compression="jpegxl", orientation=orientation)
+    )
+    plain = load_raw(
+        write_linear_dng(tmp_path / "plain.dng", samples, compression="none", orientation=orientation)
+    )
 
     assert plain.metadata.decoder["library"] == "rawpy/LibRaw"
     assert jxl.metadata.decoder["library"] == "tifffile/imagecodecs"
@@ -252,7 +269,9 @@ def test_jpegxl_linear_dng_validates_and_sizes_as_a_raw_stack(tmp_path: Path):
     from planefuse.io.loader import probe_frame_shape, validate_stack
 
     paths = [
-        write_linear_dng(tmp_path / f"{index:03d}.dng", _linear_samples(), compression="jpegxl", orientation=8)
+        write_linear_dng(
+            tmp_path / f"{index:03d}.dng", _linear_samples(), compression="jpegxl", orientation=8
+        )
         for index in (1, 2)
     ]
     assert probe_frame_shape(paths[0]) == (64, 48)
@@ -286,7 +305,9 @@ def test_linear_dng_applies_opcode_list2_map_polynomials_for_every_compression(
         ((8, 4, 40, 60), 1, 2, (2, 2), (0.1, 3.0)),
     ]
     blob = opcode_list(*(map_polynomial(*curve) for curve in curves))
-    path = write_linear_dng(tmp_path / "curves.dng", samples, compression=compression, opcode_lists={51009: blob})
+    path = write_linear_dng(
+        tmp_path / "curves.dng", samples, compression=compression, opcode_lists={51009: blob}
+    )
 
     frame = load_raw(path)
 
@@ -303,13 +324,19 @@ def test_unsupported_opcode_is_refused_by_name_unless_optional(tmp_path: Path):
     samples = _linear_samples()
     gain_map = opcode(9, b"\x00" * 16)
     refused = write_linear_dng(
-        tmp_path / "gainmap.dng", samples, compression="jpegxl", opcode_lists={51009: opcode_list(gain_map)}
+        tmp_path / "gainmap.dng",
+        samples,
+        compression="none",
+        opcode_lists={51009: opcode_list(IDENTITY, gain_map)},
     )
     with pytest.raises(RawDecodeError, match=r"gainmap\.dng: OpcodeList2 holds GainMap \(9\)"):
         load_raw(refused)
 
     late = write_linear_dng(
-        tmp_path / "late.dng", samples, compression="jpegxl", opcode_lists={51022: opcode_list(opcode(77, b""))}
+        tmp_path / "late.dng",
+        samples,
+        compression="none",
+        opcode_lists={51009: opcode_list(IDENTITY), 51022: opcode_list(opcode(77, b""))},
     )
     with pytest.raises(RawDecodeError, match=r"late\.dng: OpcodeList3 holds unknown opcode \(77\)"):
         load_raw(late)
@@ -317,14 +344,16 @@ def test_unsupported_opcode_is_refused_by_name_unless_optional(tmp_path: Path):
     skipped = write_linear_dng(
         tmp_path / "optional.dng",
         samples,
-        compression="jpegxl",
+        compression="none",
         opcode_lists={
             51008: opcode_list(opcode(4, b"\x00" * 8, optional=True)),
-            51009: opcode_list(opcode(9, b"\x00" * 16, optional=True)),
+            51009: opcode_list(IDENTITY, opcode(9, b"\x00" * 16, optional=True)),
         },
     )
-    plain = load_raw(write_linear_dng(tmp_path / "plain.dng", samples, compression="jpegxl"))
-    np.testing.assert_array_equal(load_raw(skipped).pixels, plain.pixels)
+    frame = load_raw(skipped)
+    assert frame.metadata.decoder["library"] == "tifffile/imagecodecs"
+    plain = load_raw(write_linear_dng(tmp_path / "plain.dng", samples, compression="none"))
+    np.testing.assert_array_equal(frame.pixels, plain.pixels)
 
 
 @pytest.mark.parametrize("compression", ["none", "ljpeg"])
@@ -363,11 +392,11 @@ def test_linear_dng_with_opcodes_sizes_and_validates_through_tifffile(tmp_path: 
 @pytest.mark.parametrize("compression", ["jpegxl", "none"])
 def test_linear_dng_applies_the_linearization_table_before_black(tmp_path: Path, compression: str):
     # DxO's JPEG XL renders without opcodes store a 10-bit code and a quadratic 1024-entry table.
-    table = tuple(int(round(65535 * (i / 1023) ** 2)) for i in range(1024))
+    table = tuple(round(65535 * (i / 1023) ** 2) for i in range(1024))
     samples = np.random.default_rng(11).integers(0, 1100, size=(48, 64, 3), dtype=np.uint16)
     path = write_linear_dng(
         tmp_path / "table.dng", samples, compression=compression, black=256, linearization=table,
-        opcode_lists={51009: opcode_list(opcode(9, b"", optional=True))},
+        opcode_lists={51009: opcode_list(IDENTITY)},
     )
 
     frame = load_raw(path)
@@ -379,8 +408,121 @@ def test_linear_dng_applies_the_linearization_table_before_black(tmp_path: Path,
 
 
 def test_libraw_path_carries_the_dng_baseline_exposure(tmp_path: Path):
-    path = write_linear_dng(tmp_path / "plain.dng", _linear_samples(), compression="none", baseline_exposure=(52, 100))
+    path = write_linear_dng(
+        tmp_path / "plain.dng", _linear_samples(), compression="none", baseline_exposure=(52, 100)
+    )
     frame = load_raw(path)
     assert frame.metadata.decoder["library"] == "rawpy/LibRaw"
     assert frame.metadata.baseline_exposure == pytest.approx(0.52)
     assert load_raw(write_test_raw(tmp_path / "cfa.dng")).metadata.baseline_exposure == 0.0
+
+
+_ROUTING_CASES = {
+    # Adobe "Linear" DNGs with lens corrections carry these; LibRaw opened them before the
+    # OpcodeList2 reader existed and must keep doing so.
+    "warp-in-opcodelist3": {"opcode_lists": {51022: opcode_list(opcode(1, b"\x00" * 8))}},
+    "gainmap-in-opcodelist2": {"opcode_lists": {51009: opcode_list(opcode(9, b"\x00" * 16))}},
+    "float-samples": {
+        "float_samples": True,
+        "opcode_lists": {51022: opcode_list(opcode(4, b"\x00" * 8, optional=True))},
+    },
+    "black-repeat-2x2": {
+        "raw_tag_overrides": (
+            (50713, 3, 2, (2, 2), False),
+            (50714, 5, 12, tuple(v for i in range(12) for v in (100 + i, 1)), False),
+        ),
+        "opcode_lists": {51022: opcode_list(opcode(4, b"\x00" * 8, optional=True))},
+    },
+}
+
+
+@pytest.mark.parametrize("case", sorted(_ROUTING_CASES))
+def test_linear_dng_without_map_polynomial_goes_to_libraw(tmp_path: Path, case: str):
+    from planefuse.io.loader import probe_frame_shape, validate_stack
+
+    options = dict(_ROUTING_CASES[case])
+    samples = _linear_samples()
+    pixels = samples.astype(np.float32) / 65535.0 if options.pop("float_samples", False) else samples
+    if pixels.dtype == np.float32:
+        options["white"] = 1
+    paths = [write_linear_dng(tmp_path / f"{i}.dng", pixels, compression="none", **options) for i in (1, 2)]
+
+    frame = load_raw(paths[0])
+
+    assert frame.metadata.decoder["library"] == "rawpy/LibRaw"
+    assert probe_frame_shape(paths[0]) == frame.pixels.shape[:2]
+    report = validate_stack(paths)
+    assert report.ok, [(status.status, status.message) for status in report.files]
+    assert report.decoder["library"] == "rawpy/LibRaw"
+
+
+def test_linear_dng_default_white_level_follows_bits_per_sample(tmp_path: Path):
+    samples = np.random.default_rng(12).integers(0, 4096, size=(48, 64, 3), dtype=np.uint16)
+    samples[0, 0] = 4095
+    path = write_linear_dng(
+        tmp_path / "twelve.dng",
+        samples,
+        compression="ljpeg12",
+        white=None,
+        opcode_lists={51009: opcode_list(IDENTITY)},
+    )
+
+    frame = load_raw(path)
+
+    assert frame.metadata.decoder["library"] == "tifffile/imagecodecs"
+    assert frame.metadata.white_level == 4095.0
+    assert float(frame.pixels.max()) == 1.0
+    np.testing.assert_allclose(frame.pixels, samples.astype(np.float32) / np.float32(4095), atol=1e-7)
+
+
+def test_planar_linear_dng_reads_like_the_contiguous_one(tmp_path: Path):
+    samples = _linear_samples()
+    lists = {51009: opcode_list(map_polynomial((0, 0, 48, 64), 1, 1, (1, 1), (0.1, 0.5)))}
+    planar = load_raw(
+        write_linear_dng(
+            tmp_path / "planar.dng", samples, compression="none", planar=True, opcode_lists=lists
+        )
+    )
+    contig = load_raw(
+        write_linear_dng(tmp_path / "contig.dng", samples, compression="none", opcode_lists=lists)
+    )
+    assert planar.metadata.decoder["library"] == "tifffile/imagecodecs"
+    np.testing.assert_array_equal(planar.pixels, contig.pixels)
+
+
+def test_uint8_linear_dng_with_a_table_longer_than_its_range(tmp_path: Path):
+    table = tuple(range(0, 1024 * 64, 64))
+    samples = np.random.default_rng(13).integers(0, 256, size=(48, 64, 3), dtype=np.uint8)
+    path = write_linear_dng(
+        tmp_path / "eight.dng", samples, compression="none", linearization=table,
+        opcode_lists={51009: opcode_list(IDENTITY)},
+    )
+
+    frame = load_raw(path)
+
+    expected = np.asarray(table, dtype=np.float32)[samples] / np.float32(65535)
+    np.testing.assert_allclose(frame.pixels, expected, atol=1e-7)
+
+
+def test_opcode_newer_than_the_reader_is_skipped_when_optional_and_refused_when_not(tmp_path: Path):
+    samples = _linear_samples()
+    future = b"\x01\x08\x00\x00"
+    halve = ((0, 0, 48, 64), 0, 3, (1, 1), (0.0, 0.5))
+    refused = write_linear_dng(
+        tmp_path / "future.dng", samples, compression="none",
+        opcode_lists={51009: opcode_list(map_polynomial(*halve, version=future))},
+    )
+    message = r"future\.dng: OpcodeList2 holds MapPolynomial \(8\) of DNG version 1\.8\.0\.0"
+    with pytest.raises(RawDecodeError, match=message):
+        load_raw(refused)
+
+    skipped = load_raw(
+        write_linear_dng(
+            tmp_path / "optional.dng", samples, compression="none",
+            opcode_lists={
+                51009: opcode_list(IDENTITY, map_polynomial(*halve, version=future, optional=True))
+            },
+        )
+    )
+    assert skipped.metadata.decoder["opcode_list2"] == ["MapPolynomial (8)"]
+    np.testing.assert_array_equal(skipped.pixels, samples.astype(np.float32) / np.float32(65535))

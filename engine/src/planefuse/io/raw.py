@@ -198,23 +198,26 @@ _OPCODE_NAMES = {
 }
 _OPCODE_OPTIONAL = 1
 _OPCODE_LISTS = {51008: "OpcodeList1", 51009: "OpcodeList2", 51022: "OpcodeList3"}
+_MAP_POLYNOMIAL = 8
+# The newest DNG version whose opcodes this reader implements; a newer opcode is not processed.
+_OPCODE_VERSION_CEILING = (1, 7, 0, 0)
 
 
 def _opcode_name(opcode_id: int) -> str:
     return f"{_OPCODE_NAMES.get(opcode_id, 'unknown opcode')} ({opcode_id})"
 
 
-def _parse_opcodes(blob: bytes, list_name: str, path: Path) -> list[tuple[int, int, bytes]]:
-    """(opcode id, flags, parameter bytes) per opcode of a DNG opcode list (big-endian, DNG spec 1.3+)."""
+def _parse_opcodes(blob: bytes, list_name: str, path: Path) -> list[tuple[int, tuple[int, ...], int, bytes]]:
+    """(opcode id, DNG version, flags, parameter bytes) per opcode of a DNG opcode list (big-endian)."""
     try:
         (count,) = struct.unpack_from(">I", blob, 0)
         position, opcodes = 4, []
         for _ in range(count):
-            opcode_id, _version, flags, size = struct.unpack_from(">I4sII", blob, position)
+            opcode_id, version, flags, size = struct.unpack_from(">I4sII", blob, position)
             position += 16
             if position + size > len(blob):
                 raise struct.error("parameters run past the end of the list")
-            opcodes.append((opcode_id, flags, blob[position:position + size]))
+            opcodes.append((opcode_id, tuple(version), flags, blob[position:position + size]))
             position += size
     except struct.error as exc:
         raise RawDecodeError(f"{path.name}: malformed {list_name}: {exc}") from exc
@@ -253,51 +256,51 @@ def _map_polynomial(pixels: np.ndarray, params: bytes, path: Path) -> None:
     area[...] = result
 
 
-def _check_opcode_lists(page: Any, path: Path) -> list[tuple[int, int, bytes]]:
-    """Refuse OpcodeList1/3 unless every opcode in them is optional; return OpcodeList2's opcodes."""
-    opcode_list2: list[tuple[int, int, bytes]] = []
+def _check_opcode_lists(page: Any, path: Path) -> list[bytes]:
+    """The parameters of each OpcodeList2 MapPolynomial to apply. An opcode this reader does not
+    implement, or one written for a DNG version newer than it supports, is skipped when optional
+    and refused by name when not, in all three lists."""
+    to_apply: list[bytes] = []
     for code, list_name in _OPCODE_LISTS.items():
         tag = page.tags.get(code)
         if tag is None:
             continue
-        opcodes = _parse_opcodes(bytes(tag.value), list_name, path)
-        if code == 51009:
-            opcode_list2 = opcodes
-            continue
-        required = [_opcode_name(opcode_id) for opcode_id, flags, _ in opcodes if not flags & _OPCODE_OPTIONAL]
-        if required:
-            raise RawDecodeError(
-                f"{path.name}: {list_name} holds {', '.join(required)}, which is not optional and is not "
-                "supported"
-            )
-    for opcode_id, flags, _ in opcode_list2:
-        if opcode_id != 8 and not flags & _OPCODE_OPTIONAL:
-            raise RawDecodeError(
-                f"{path.name}: OpcodeList2 holds {_opcode_name(opcode_id)}, which is not optional and is not "
-                "supported"
-            )
-    return opcode_list2
+        for opcode_id, version, flags, params in _parse_opcodes(bytes(tag.value), list_name, path):
+            optional = bool(flags & _OPCODE_OPTIONAL)
+            if version > _OPCODE_VERSION_CEILING:
+                if optional:
+                    continue
+                raise RawDecodeError(
+                    f"{path.name}: {list_name} holds {_opcode_name(opcode_id)} of DNG version "
+                    f"{'.'.join(map(str, version))}, newer than this reader's "
+                    f"{'.'.join(map(str, _OPCODE_VERSION_CEILING))}, and it is not optional"
+                )
+            if code == 51009 and opcode_id == _MAP_POLYNOMIAL:
+                to_apply.append(params)
+            elif not optional:
+                raise RawDecodeError(
+                    f"{path.name}: {list_name} holds {_opcode_name(opcode_id)}, which is not optional and is "
+                    "not supported"
+                )
+    return to_apply
 
 
-def linear_dng_has_opcodes(path: Path) -> bool:
-    """True for a DNG whose full-resolution IFD is a 3-sample LinearRaw image carrying an opcode list
-    with at least one opcode. LibRaw ignores those lists, so such a DNG is read with tifffile even
-    when LibRaw can open it. Reads tags only, never pixels."""
+def linear_dng_has_map_polynomial(path: Path) -> bool:
+    """True for a DNG whose full-resolution IFD is a 3-sample LinearRaw image with a MapPolynomial in
+    OpcodeList2 (DxO's tone encoding). LibRaw silently ignores that curve, so such a DNG is read with
+    tifffile even when LibRaw can open it; every other DNG goes to LibRaw first. Reads tags only."""
     try:
         with tifffile.TiffFile(path) as tif:
             page = _main_dng_ifd(tif)
             if page is None or int(page.photometric) != _LINEAR_RAW or int(page.samplesperpixel) != 3:
                 return False
-            for code in _OPCODE_LISTS:
-                tag = page.tags.get(code)
-                if tag is None:
-                    continue
-                blob = bytes(tag.value)
-                if len(blob) >= 4 and struct.unpack_from(">I", blob, 0)[0] > 0:
-                    return True
-    except Exception:  # noqa: BLE001 - not a readable TIFF container: the rawpy path decides
+            tag = page.tags.get(51009)
+            if tag is None:
+                return False
+            opcodes = _parse_opcodes(bytes(tag.value), "OpcodeList2", path)
+    except Exception:  # noqa: BLE001 - unreadable header or list: the LibRaw path decides
         return False
-    return False
+    return any(opcode_id == _MAP_POLYNOMIAL for opcode_id, _, _, _ in opcodes)
 
 
 def linear_dng_shape(path: Path) -> tuple[int, int] | None:
@@ -316,11 +319,11 @@ def linear_dng_shape(path: Path) -> tuple[int, int] | None:
 
 
 def _load_linear_dng(path: Path, reason: str, common: dict[str, Any], tags: dict[int, Any]):
-    """Read a 3-sample LinearRaw DNG with tifffile (imagecodecs decodes JPEG XL tiles):
-    (sample - BlackLevel) / (WhiteLevel - BlackLevel) per channel, clipped to [0, 1], then the
-    OpcodeList2 MapPolynomial curves (DxO stores a curve-encoded signal they linearize), then
-    oriented. Without opcodes this is the frame LibRaw gives for the same DNG uncompressed,
-    and the metadata keeps LibRaw's per-channel black layout."""
+    """Read a 3-sample LinearRaw DNG with tifffile (imagecodecs decodes the tiles or strips): the
+    LinearizationTable if any, (sample - BlackLevel) / (WhiteLevel - BlackLevel) per channel,
+    clipped to [0, 1], then the OpcodeList2 MapPolynomial curves (DxO stores a curve-encoded
+    signal they linearize), then oriented. Without opcodes this is the frame LibRaw gives for the
+    same DNG, and the metadata keeps LibRaw's per-channel black layout."""
     import imagecodecs
 
     from planefuse.io.metadata import normalize_orientation
@@ -331,7 +334,8 @@ def _load_linear_dng(path: Path, reason: str, common: dict[str, Any], tags: dict
             compression = int(page.compression)
             if page.dtype not in (np.dtype(np.uint8), np.dtype(np.uint16)):
                 raise RawDecodeError(f"{path.name}: LinearRaw DNG has unsupported sample type {page.dtype}")
-            bits = int(np.iinfo(page.dtype).bits)
+            bits_per_sample = page.bitspersample
+            bits = int(bits_per_sample[0] if isinstance(bits_per_sample, tuple) else bits_per_sample)
             black_tag = page.tags.get(50714)
             white_tag = page.tags.get(50717)
             black = _per_sample(_tag_numbers(black_tag), 3, "BlackLevel", path) if black_tag else (0.0,) * 3
@@ -340,32 +344,36 @@ def _load_linear_dng(path: Path, reason: str, common: dict[str, Any], tags: dict
                 if white_tag
                 else (float(2**bits - 1),) * 3
             )
-            opcode_list2 = _check_opcode_lists(page, path)
+            map_polynomials = _check_opcode_lists(page, path)
             linearization = page.tags.get(50712)
             top, left, bottom, right = _active_area(page)
-            samples = page.asarray()[top:bottom, left:right]
+            samples = page.asarray()
+            if int(page.planarconfig) == 2:
+                samples = np.moveaxis(samples, 0, -1)
+            samples = samples[top:bottom, left:right]
             if linearization is not None:
                 # DNG LinearizationTable: sample -> table[min(sample, len - 1)], before BlackLevel.
                 table = np.asarray(linearization.value, dtype=np.uint16).reshape(-1)
-                samples = table[np.minimum(samples, table.size - 1)]
+                if table.size - 1 < np.iinfo(samples.dtype).max:
+                    samples = np.minimum(samples, samples.dtype.type(table.size - 1))
+                samples = table[samples]
+
+        black_arr = np.array(black, dtype=np.float32)
+        denominators = np.array(white, dtype=np.float32) - black_arr
+        if np.any(denominators <= 0):
+            raise RawDecodeError(f"{path.name}: invalid black/white calibration")
+        pixels = samples.astype(np.float32)
+        del samples
+        pixels -= black_arr
+        np.clip(pixels, 0.0, denominators, out=pixels)
+        pixels /= denominators
+        for params in map_polynomials:
+            _map_polynomial(pixels, params, path)
+        pixels = normalize_orientation(pixels, orientation)
     except RawDecodeError:
         raise
-    except Exception as exc:  # tifffile and imagecodecs raise many types
+    except Exception as exc:  # tifffile, imagecodecs and numpy raise many types
         raise RawDecodeError(f"{path.name}: could not read the LinearRaw DNG with tifffile: {exc}") from exc
-
-    black_arr = np.array(black, dtype=np.float32)
-    denominators = np.array(white, dtype=np.float32) - black_arr
-    if np.any(denominators <= 0):
-        raise RawDecodeError(f"{path.name}: invalid black/white calibration")
-    pixels = samples.astype(np.float32)
-    del samples
-    pixels -= black_arr
-    np.clip(pixels, 0.0, denominators, out=pixels)
-    pixels /= denominators
-    for opcode_id, _flags, params in opcode_list2:
-        if opcode_id == 8:
-            _map_polynomial(pixels, params, path)
-    pixels = normalize_orientation(pixels, orientation)
     white_level = max(white)
     metadata = ImageMetadata(
         **common,
@@ -386,7 +394,7 @@ def _load_linear_dng(path: Path, reason: str, common: dict[str, Any], tags: dict
             "imagecodecs_version": imagecodecs.__version__,
             "reason": reason,
             "compression": compression,
-            "opcode_list2": [_opcode_name(opcode_id) for opcode_id, _, _ in opcode_list2],
+            "opcode_list2": [_opcode_name(_MAP_POLYNOMIAL)] * len(map_polynomials),
             "demosaic": "none (LinearRaw)",
             "white_balance": [1.0, 1.0, 1.0, 1.0],
             "gamma": [1.0, 1.0],
@@ -449,8 +457,8 @@ def load_raw(path: Path):
         "baseline_exposure": baseline_exposure[0] if baseline_exposure else 0.0,
     }
 
-    if path.suffix.lower() == ".dng" and linear_dng_has_opcodes(path):
-        return _load_linear_dng(path, "LinearRaw DNG with opcode lists", common, tags)
+    if path.suffix.lower() == ".dng" and linear_dng_has_map_polynomial(path):
+        return _load_linear_dng(path, "OpcodeList2 MapPolynomial, which LibRaw ignores", common, tags)
 
     decoder = {
         "library": "rawpy/LibRaw",

@@ -261,9 +261,9 @@ def probe_frame_shape(path: Path) -> tuple[int, int] | None:
         if path.suffix.lower() in RAW_EXTENSIONS:
             import rawpy
 
-            from planefuse.io.raw import linear_dng_has_opcodes, linear_dng_shape
+            from planefuse.io.raw import linear_dng_has_map_polynomial, linear_dng_shape
 
-            if path.suffix.lower() == ".dng" and linear_dng_has_opcodes(path):
+            if path.suffix.lower() == ".dng" and linear_dng_has_map_polynomial(path):
                 return linear_dng_shape(path)
             try:
                 raw_context = rawpy.imread(str(path))
