@@ -283,6 +283,20 @@ def probe_frame_shape(path: Path) -> tuple[int, int] | None:
         return None
 
 
+# LibRaw measures the black level of a camera in its size table from the masked
+# border, per frame, and truncates the mean to an integer, so frames of one stack
+# can differ by one count. Each frame is normalized by its own black level.
+_BLACK_LEVEL_TOLERANCE = 1.0
+
+
+def _black_levels_compatible(
+    expected: tuple[float, ...] | None, actual: tuple[float, ...] | None
+) -> bool:
+    if expected is None or actual is None or len(expected) != len(actual):
+        return expected == actual
+    return all(abs(a - e) <= _BLACK_LEVEL_TOLERANCE for e, a in zip(expected, actual))
+
+
 def validate_stack(
     paths: list[Path],
     loaded: list[Frame | BaseException | None] | None = None,
@@ -420,7 +434,10 @@ def validate_stack(
                 actual_metadata.calibration_illuminant1,
                 actual_metadata.calibration_illuminant2,
             )
-            if actual_calibration != expected_calibration:
+            if not (
+                _black_levels_compatible(expected_metadata.black_level, actual_metadata.black_level)
+                and actual_calibration[1:] == expected_calibration[1:]
+            ):
                 report.files.append(
                     mismatch(
                         p,

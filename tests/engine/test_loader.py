@@ -119,6 +119,7 @@ def test_validate_same_camera_raw_stack_reports_domain_and_decoder(tmp_path):
         ({"model": "Different Camera"}, "incompatible_camera"),
         ({"width": 42}, "incompatible_sensor_mode"),
         ({"cfa": (2, 1, 1, 0)}, "incompatible_cfa"),
+        ({"black": 514}, "incompatible_raw_calibration"),
     ],
 )
 def test_validate_raw_stack_rejects_incompatible_frames(tmp_path, second_options, expected_status):
@@ -130,6 +131,14 @@ def test_validate_raw_stack_rejects_incompatible_frames(tmp_path, second_options
     assert report.files[1].status == expected_status
     assert "expected" in report.files[1].message
     assert "actual" in report.files[1].message
+
+
+@pytest.mark.parametrize("second_black", [511, 513])
+def test_validate_raw_stack_accepts_one_count_of_black_level_difference(tmp_path, second_black):
+    first = write_test_raw(tmp_path / "first.dng")
+    second = write_test_raw(tmp_path / "second.dng", black=second_black)
+    report = validate_stack([first, second])
+    assert report.ok, [(status.status, status.message) for status in report.files]
 
 
 def test_validate_stack_rejects_mixed_rendered_and_raw_domains(tmp_path):
