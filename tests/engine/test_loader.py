@@ -119,7 +119,7 @@ def test_validate_same_camera_raw_stack_reports_domain_and_decoder(tmp_path):
         ({"model": "Different Camera"}, "incompatible_camera"),
         ({"width": 42}, "incompatible_sensor_mode"),
         ({"cfa": (2, 1, 1, 0)}, "incompatible_cfa"),
-        ({"black": 514}, "incompatible_raw_calibration"),
+        ({"white": 15000}, "incompatible_raw_calibration"),
     ],
 )
 def test_validate_raw_stack_rejects_incompatible_frames(tmp_path, second_options, expected_status):
@@ -133,12 +133,32 @@ def test_validate_raw_stack_rejects_incompatible_frames(tmp_path, second_options
     assert "actual" in report.files[1].message
 
 
-@pytest.mark.parametrize("second_black", [511, 513])
-def test_validate_raw_stack_accepts_one_count_of_black_level_difference(tmp_path, second_black):
+@pytest.mark.parametrize("second_black", [511, 513, 2048])
+def test_validate_raw_stack_accepts_a_different_black_level(tmp_path, second_black):
     first = write_test_raw(tmp_path / "first.dng")
     second = write_test_raw(tmp_path / "second.dng", black=second_black)
     report = validate_stack([first, second])
     assert report.ok, [(status.status, status.message) for status in report.files]
+
+
+def test_validate_raw_stack_names_the_odd_first_frame_not_the_rest(tmp_path):
+    odd = write_test_raw(tmp_path / "frame-0.dng", white=15000)
+    rest = [write_test_raw(tmp_path / f"frame-{index}.dng") for index in range(1, 4)]
+    report = validate_stack([odd, *rest])
+    assert not report.ok
+    assert [status.status for status in report.files] == [
+        "incompatible_raw_calibration", "ok", "ok", "ok",
+    ]
+    assert "expected (16383.0" in report.files[0].message
+
+
+def test_validate_stack_names_the_odd_rendered_frame(tmp_path):
+    Image.fromarray(np.zeros((30, 20, 3), dtype=np.uint8)).save(tmp_path / "a.png")
+    for name in ("b.png", "c.png"):
+        Image.fromarray(np.zeros((20, 20, 3), dtype=np.uint8)).save(tmp_path / name)
+    report = validate_stack([tmp_path / "a.png", tmp_path / "b.png", tmp_path / "c.png"])
+    assert [status.status for status in report.files] == ["wrong_size", "ok", "ok"]
+    assert (report.width, report.height) == (20, 20)
 
 
 def test_validate_stack_rejects_mixed_rendered_and_raw_domains(tmp_path):

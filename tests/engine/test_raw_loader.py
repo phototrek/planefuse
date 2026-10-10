@@ -20,6 +20,7 @@ def write_test_raw(
     cfa: tuple[int, int, int, int] = (0, 1, 1, 2),
     include_calibration: bool = True,
     black: int = 512,
+    white: int = 16383,
 ) -> Path:
     mosaic = np.empty((height, width), dtype=np.uint16)
     mosaic[0::2, 0::2] = black + 8000
@@ -39,7 +40,7 @@ def write_test_raw(
         (33422, 1, 4, bytes(cfa), False),
         (50713, 3, 2, (2, 2), False),
         (50714, 5, 4, (black, 1, black, 1, black, 1, black, 1), False),
-        (50717, 4, 1, 16383, False),
+        (50717, 4, 1, white, False),
         ascii_tag(271, make),
         ascii_tag(272, model),
     ]

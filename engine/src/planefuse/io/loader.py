@@ -283,18 +283,118 @@ def probe_frame_shape(path: Path) -> tuple[int, int] | None:
         return None
 
 
-# LibRaw measures the black level of a camera in its size table from the masked
-# border, per frame, and truncates the mean to an integer, so frames of one stack
-# can differ by one count. Each frame is normalized by its own black level.
-_BLACK_LEVEL_TOLERANCE = 1.0
+def _raw_calibration_missing(metadata: ImageMetadata) -> list[str]:
+    required = {
+        "camera model": metadata.unique_camera_model,
+        "black level": metadata.black_level,
+        "white level": metadata.white_level,
+        "color matrix": metadata.color_matrix1,
+        "as-shot neutral": metadata.as_shot_neutral,
+        "calibration illuminant": metadata.calibration_illuminant1,
+    }
+    return [name for name, value in required.items() if value is None]
 
 
-def _black_levels_compatible(
-    expected: tuple[float, ...] | None, actual: tuple[float, ...] | None
-) -> bool:
-    if expected is None or actual is None or len(expected) != len(actual):
-        return expected == actual
-    return all(abs(a - e) <= _BLACK_LEVEL_TOLERANCE for e, a in zip(expected, actual))
+def _mismatch(path: Path, status: str, field_name: str, expected: object, actual: object) -> FileStatus:
+    return FileStatus(path, status, f"{field_name}: expected {expected!r}, actual {actual!r}")
+
+
+def _reference_status(probe: _FrameProbe) -> FileStatus:
+    """What a frame reports when it is the one the others are compared to."""
+    if probe.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
+        if probe.metadata is None:
+            return FileStatus(probe.path, "missing_raw_calibration", "missing metadata")
+        missing = _raw_calibration_missing(probe.metadata)
+        if missing:
+            return FileStatus(probe.path, "missing_raw_calibration", "missing: " + ", ".join(missing))
+    return FileStatus(probe.path, "ok")
+
+
+def _compare_to_reference(reference: _FrameProbe, probe: _FrameProbe, report: ValidationReport) -> FileStatus:
+    p = probe.path
+    if probe.domain is not reference.domain:
+        return _mismatch(p, "mixed_domain", "processing domain", reference.domain.value, probe.domain.value)
+
+    if probe.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
+        if reference.metadata is None or probe.metadata is None:
+            return FileStatus(p, "missing_raw_calibration", "missing metadata")
+        expected_metadata = reference.metadata
+        actual_metadata = probe.metadata
+        missing = _raw_calibration_missing(actual_metadata)
+        if missing:
+            return FileStatus(p, "missing_raw_calibration", "missing: " + ", ".join(missing))
+        expected_camera = expected_metadata.unique_camera_model
+        actual_camera = actual_metadata.unique_camera_model
+        if actual_camera != expected_camera:
+            return _mismatch(p, "incompatible_camera", "camera", expected_camera, actual_camera)
+        expected_sensor = (
+            expected_metadata.active_size,
+            expected_metadata.source_orientation,
+            expected_metadata.bits_per_sample,
+        )
+        actual_sensor = (
+            actual_metadata.active_size,
+            actual_metadata.source_orientation,
+            actual_metadata.bits_per_sample,
+        )
+        if actual_sensor != expected_sensor:
+            return _mismatch(p, "incompatible_sensor_mode", "sensor mode", expected_sensor, actual_sensor)
+        expected_cfa = (expected_metadata.cfa_pattern, expected_metadata.color_description)
+        actual_cfa = (actual_metadata.cfa_pattern, actual_metadata.color_description)
+        if actual_cfa != expected_cfa:
+            return _mismatch(p, "incompatible_cfa", "CFA", expected_cfa, actual_cfa)
+        # The black level is not compared: each frame is normalized by its own
+        # black and white level when it is decoded, and the black level changes
+        # with the camera's gain mode (an Auto ISO step inside a bracket) and,
+        # for a camera in LibRaw's size table, by a count from frame to frame.
+        expected_calibration = (
+            expected_metadata.white_level,
+            expected_metadata.color_matrix1,
+            expected_metadata.color_matrix2,
+            expected_metadata.calibration_illuminant1,
+            expected_metadata.calibration_illuminant2,
+        )
+        actual_calibration = (
+            actual_metadata.white_level,
+            actual_metadata.color_matrix1,
+            actual_metadata.color_matrix2,
+            actual_metadata.calibration_illuminant1,
+            actual_metadata.calibration_illuminant2,
+        )
+        if actual_calibration != expected_calibration:
+            return _mismatch(p, "incompatible_raw_calibration", "RAW calibration",
+                             expected_calibration, actual_calibration)
+        return FileStatus(p, "ok")
+
+    if (probe.width, probe.height) != (report.width, report.height):
+        return FileStatus(p, "wrong_size", f"{probe.width}x{probe.height} != {report.width}x{report.height}")
+    if probe.bit_depth != report.bit_depth:
+        return FileStatus(p, "wrong_bit_depth", f"{probe.bit_depth} != {report.bit_depth}")
+    return FileStatus(p, "ok")
+
+
+def _set_reference_fields(report: ValidationReport, probe: _FrameProbe) -> None:
+    report.width, report.height, report.bit_depth = probe.width, probe.height, probe.bit_depth
+    report.domain = probe.domain.value
+    report.camera = (probe.metadata.unique_camera_model or "") if probe.metadata is not None else ""
+    report.decoder = dict(probe.decoder)
+
+
+def _majority_reference(probes: list[_FrameProbe]) -> _FrameProbe:
+    """The frame most of the others agree with, so that one odd frame is the
+    one reported instead of every frame but it. Ties go to the earliest frame."""
+    candidates = [probe for probe in probes if _reference_status(probe).status == "ok"] or probes[:1]
+    best, best_agree = candidates[0], -1
+    for candidate in candidates:
+        scratch = ValidationReport()
+        _set_reference_fields(scratch, candidate)
+        agree = sum(
+            1 for probe in probes
+            if probe is not candidate and _compare_to_reference(candidate, probe, scratch).status == "ok"
+        )
+        if agree > best_agree:
+            best, best_agree = candidate, agree
+    return best
 
 
 def validate_stack(
@@ -307,35 +407,18 @@ def validate_stack(
     exception its decode raised), index-aligned with `paths`; RAW files are then
     validated from it instead of being decoded again. The checks and messages
     are the same either way.
+
+    Every frame is compared to the frame most of the stack agrees with, not to
+    the first one.
     """
     report = ValidationReport()
-    reference: _FrameProbe | None = None
-
-    def mismatch(path: Path, status: str, field_name: str, expected: object, actual: object) -> FileStatus:
-        return FileStatus(
-            path,
-            status,
-            f"{field_name}: expected {expected!r}, actual {actual!r}",
-        )
-
-    def raw_calibration_missing(metadata: ImageMetadata) -> list[str]:
-        required = {
-            "camera model": metadata.unique_camera_model,
-            "black level": metadata.black_level,
-            "white level": metadata.white_level,
-            "color matrix": metadata.color_matrix1,
-            "as-shot neutral": metadata.as_shot_neutral,
-            "calibration illuminant": metadata.calibration_illuminant1,
-        }
-        return [name for name, value in required.items() if value is None]
-
+    results: list[_FrameProbe | FileStatus] = []
     for index, p in enumerate(paths):
         p = Path(p)
         try:
-            probe = _probe_frame(p, loaded[index] if loaded is not None else None)
+            results.append(_probe_frame(p, loaded[index] if loaded is not None else None))
         except RawDecodeError as e:
-            report.files.append(FileStatus(p, "raw_decode_error", str(e)))
-            continue
+            results.append(FileStatus(p, "raw_decode_error", str(e)))
         except ValidationError as e:
             if p.suffix.lower() not in SUPPORTED:
                 kind = "unsupported"
@@ -343,126 +426,21 @@ def validate_stack(
                 kind = "not_rgb"
             else:
                 kind = "unsupported"
-            report.files.append(FileStatus(p, kind, str(e)))
-            continue
+            results.append(FileStatus(p, kind, str(e)))
         except Exception as e:  # noqa: BLE001 - corrupted files land here by design
-            report.files.append(FileStatus(p, "unreadable", str(e)))
-            continue
-        if reference is None:
-            reference = probe
-            report.width, report.height, report.bit_depth = (
-                probe.width,
-                probe.height,
-                probe.bit_depth,
-            )
-            report.domain = probe.domain.value
-            report.camera = (probe.metadata.unique_camera_model or "") if probe.metadata is not None else ""
-            report.decoder = dict(probe.decoder)
-            if probe.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
-                if probe.metadata is None:
-                    report.files.append(FileStatus(p, "missing_raw_calibration", "missing metadata"))
-                    continue
-                missing = raw_calibration_missing(probe.metadata)
-                if missing:
-                    report.files.append(
-                        FileStatus(p, "missing_raw_calibration", "missing: " + ", ".join(missing))
-                    )
-                    continue
-            report.files.append(FileStatus(p, "ok"))
-            continue
+            results.append(FileStatus(p, "unreadable", str(e)))
 
-        if probe.domain is not reference.domain:
-            report.files.append(
-                mismatch(p, "mixed_domain", "processing domain", reference.domain.value, probe.domain.value)
-            )
-            continue
-
-        if probe.domain is ProcessingDomain.SCENE_LINEAR_CAMERA_RGB:
-            if reference.metadata is None or probe.metadata is None:
-                report.files.append(FileStatus(p, "missing_raw_calibration", "missing metadata"))
-                continue
-            expected_metadata = reference.metadata
-            actual_metadata = probe.metadata
-            missing = raw_calibration_missing(actual_metadata)
-            if missing:
-                report.files.append(
-                    FileStatus(p, "missing_raw_calibration", "missing: " + ", ".join(missing))
-                )
-                continue
-            expected_camera = expected_metadata.unique_camera_model
-            actual_camera = actual_metadata.unique_camera_model
-            if actual_camera != expected_camera:
-                report.files.append(
-                    mismatch(p, "incompatible_camera", "camera", expected_camera, actual_camera)
-                )
-                continue
-            expected_sensor = (
-                expected_metadata.active_size,
-                expected_metadata.source_orientation,
-                expected_metadata.bits_per_sample,
-            )
-            actual_sensor = (
-                actual_metadata.active_size,
-                actual_metadata.source_orientation,
-                actual_metadata.bits_per_sample,
-            )
-            if actual_sensor != expected_sensor:
-                report.files.append(
-                    mismatch(p, "incompatible_sensor_mode", "sensor mode", expected_sensor, actual_sensor)
-                )
-                continue
-            expected_cfa = (expected_metadata.cfa_pattern, expected_metadata.color_description)
-            actual_cfa = (actual_metadata.cfa_pattern, actual_metadata.color_description)
-            if actual_cfa != expected_cfa:
-                report.files.append(
-                    mismatch(p, "incompatible_cfa", "CFA", expected_cfa, actual_cfa)
-                )
-                continue
-            expected_calibration = (
-                expected_metadata.black_level,
-                expected_metadata.white_level,
-                expected_metadata.color_matrix1,
-                expected_metadata.color_matrix2,
-                expected_metadata.calibration_illuminant1,
-                expected_metadata.calibration_illuminant2,
-            )
-            actual_calibration = (
-                actual_metadata.black_level,
-                actual_metadata.white_level,
-                actual_metadata.color_matrix1,
-                actual_metadata.color_matrix2,
-                actual_metadata.calibration_illuminant1,
-                actual_metadata.calibration_illuminant2,
-            )
-            if not (
-                _black_levels_compatible(expected_metadata.black_level, actual_metadata.black_level)
-                and actual_calibration[1:] == expected_calibration[1:]
-            ):
-                report.files.append(
-                    mismatch(
-                        p,
-                        "incompatible_raw_calibration",
-                        "RAW calibration",
-                        expected_calibration,
-                        actual_calibration,
-                    )
-                )
-                continue
-            report.files.append(FileStatus(p, "ok"))
-            continue
-
-        if (probe.width, probe.height) != (report.width, report.height):
-            report.files.append(
-                FileStatus(
-                    p,
-                    "wrong_size",
-                    f"{probe.width}x{probe.height} != {report.width}x{report.height}",
-                )
-            )
-        elif probe.bit_depth != report.bit_depth:
-            report.files.append(
-                FileStatus(p, "wrong_bit_depth", f"{probe.bit_depth} != {report.bit_depth}")
-            )
+    probes = [item for item in results if isinstance(item, _FrameProbe)]
+    if not probes:
+        report.files = [item for item in results if isinstance(item, FileStatus)]
+        return report
+    reference = _majority_reference(probes)
+    _set_reference_fields(report, reference)
+    for item in results:
+        if isinstance(item, FileStatus):
+            report.files.append(item)
+        elif item is reference:
+            report.files.append(_reference_status(item))
         else:
-            report.files.append(FileStatus(p, "ok"))
+            report.files.append(_compare_to_reference(reference, item, report))
     return report
