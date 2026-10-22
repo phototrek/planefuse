@@ -81,6 +81,47 @@ def test_pmax_smoothing_changes_output(synth):
     assert _ssim(b, synth.sharp) > 0.97  # smoothing must not wreck quality
 
 
+def test_pmax_range_clamp_is_on_by_default_and_registered():
+    algo = get_algorithm("pmax")
+    spec = {p.name: p for p in algo.params()}
+    assert spec["range_clamp"].default is True
+
+
+def test_pmax_range_clamp_keeps_every_pixel_inside_the_frames_range(synth):
+    algo = get_algorithm("pmax")
+    src = ArrayFrameSource(synth.frames)
+    stack = np.stack(synth.frames)
+    lo, hi = stack.min(axis=0), stack.max(axis=0)
+    eps = 1e-5
+    clamped = algo.run(src, get_device("cpu"), {"selection_smoothing": 1, "range_clamp": True}).image
+    assert (clamped >= lo - eps).all() and (clamped <= hi + eps).all()
+    # the same run without the clamp leaves the range, which is what the clamp is for
+    free = algo.run(src, get_device("cpu"), {"selection_smoothing": 1, "range_clamp": False}).image
+    assert ((free < lo - eps) | (free > hi + eps)).any()
+
+
+def test_pmax_range_clamp_does_not_hurt_quality(synth):
+    algo = get_algorithm("pmax")
+    res = algo.run(ArrayFrameSource(synth.frames), get_device("cpu"), {"selection_smoothing": 1, "range_clamp": True})
+    assert _ssim(res.image, synth.sharp) > 0.97
+
+
+def test_pmax_range_clamp_ignores_invalid_pixels(synth):
+    """An invalid region of a frame must not widen the range there."""
+    frames = [f.copy() for f in synth.frames]
+    frames[3][:, :, :] = 5.0
+    masks = [np.ones(f.shape[:2], dtype=bool) for f in frames]
+    masks[3][:, :] = False
+    algo = get_algorithm("pmax")
+    res = algo.run(
+        ArrayFrameSource(frames),
+        get_device("cpu"),
+        {"selection_smoothing": 1, "range_clamp": True},
+        masks=ArrayMaskSource(masks),
+    )
+    assert res.image.max() < 2.0
+
+
 def test_pmax_device_parity(accel_device, synth):
     algo = get_algorithm("pmax")
     src = ArrayFrameSource(synth.frames)

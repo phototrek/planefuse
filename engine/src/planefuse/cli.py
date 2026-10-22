@@ -31,6 +31,17 @@ def stack(
     method: str = typer.Option("pmax", help=f"Stacking method: {sorted(REGISTRY)}"),
     device: str = typer.Option("auto", help="Compute device: auto|cuda|mps|cpu"),
     selection_smoothing: int = typer.Option(1, min=0, max=3, help="PMax halo control (0=off)"),
+    range_clamp: bool = typer.Option(
+        True, "--range-clamp/--no-range-clamp",
+        help="PMax: limit each pixel to the range of the aligned frames (removes dark rims)",
+    ),
+    estimation_radius: int = typer.Option(
+        8, min=1, max=32,
+        help="dmap: focus-measure window radius (smaller keeps edges tighter, loses fine texture)",
+    ),
+    smoothing_radius: int = typer.Option(
+        16, min=1, max=64, help="dmap: depth-map smoothing radius",
+    ),
     align: bool = typer.Option(False, "--align/--pre-aligned",
                                help="Run §6 alignment first (default: frames are pre-aligned)"),
     align_model: str = typer.Option(
@@ -98,7 +109,8 @@ def stack(
 
     params = {
         "selection_smoothing": selection_smoothing,
-        "estimation_radius": 8, "contrast_threshold": 7.0, "smoothing_radius": 16,
+        "range_clamp": range_clamp,
+        "estimation_radius": estimation_radius, "contrast_threshold": 7.0, "smoothing_radius": smoothing_radius,
         "temperature": 0.05, "sharpness_radius": 8,
         "slab_size": 10, "slab_overlap": 2, "inner_method": "pmax", "outer_method": "dmap",
     }

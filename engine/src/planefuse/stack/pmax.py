@@ -70,6 +70,37 @@ def _frame_pyramid(
     return lap, energies, residual, res_weight
 
 
+class _RangeBounds:
+    """Per-pixel, per-channel minimum and maximum over the aligned frames.
+
+    A fused pixel cannot honestly be darker or brighter than every source frame at
+    that place; PMax can overshoot there, which shows as a dark rim along a
+    high-contrast edge. The bounds are built in the fold pass from the frames it
+    already reads, and `apply` limits the collapsed result to them.
+    """
+
+    def __init__(self) -> None:
+        self.lo: torch.Tensor | None = None
+        self.hi: torch.Tensor | None = None
+
+    def update(self, frame: np.ndarray | torch.Tensor, device: Device, valid: torch.Tensor | None) -> None:
+        t = frame.to(device.torch_device) if isinstance(frame, torch.Tensor) else ops.to_tensor(frame, device)
+        lo_src = t if valid is None else torch.where(valid, t, torch.full_like(t, float("inf")))
+        hi_src = t if valid is None else torch.where(valid, t, torch.full_like(t, float("-inf")))
+        if self.lo is None or self.hi is None:
+            self.lo, self.hi = lo_src.clone(), hi_src.clone()
+        else:
+            self.lo = torch.minimum(self.lo, lo_src)
+            self.hi = torch.maximum(self.hi, hi_src)
+
+    def apply(self, result: torch.Tensor) -> torch.Tensor:
+        if self.lo is None or self.hi is None:
+            return result
+        covered = torch.isfinite(self.lo) & torch.isfinite(self.hi)
+        clamped = torch.minimum(torch.maximum(result, self.lo), self.hi)
+        return torch.where(covered, clamped, result)
+
+
 def _read_mask(masks: FrameSource, idx: int) -> np.ndarray | torch.Tensor:
     held = read_tensor(masks, idx)
     return held if held is not None else masks.read(idx)
@@ -114,6 +145,17 @@ class PMax:
                     "expected and matches Zerene."
                 ),
             ),
+            ParamSpec(
+                "range_clamp",
+                "Range clamp",
+                "bool",
+                default=True,
+                tooltip=(
+                    "Limits every output pixel to the lowest and highest value that pixel has "
+                    "in any aligned frame. Removes the dark rims PMax draws along high-contrast "
+                    "edges; leaves fine detail alone."
+                ),
+            ),
         ]
 
     def run(
@@ -126,6 +168,7 @@ class PMax:
         masks: FrameSource | None = None,
     ) -> StackResult:
         smoothing = int(params.get("selection_smoothing", 1))
+        bounds = _RangeBounds() if bool(params.get("range_clamp", True)) else None
         n = len(source)
         first = _read_frame(source, 0)
         h, w = first.shape[-2:] if isinstance(first, torch.Tensor) else first.shape[:2]
@@ -159,6 +202,8 @@ class PMax:
                 mlv = _mask_levels(_read_mask(masks, idx), device, depth)
                 energies = [e.masked_fill(~m, _NEG_INF) for e, m in zip(energies, mlv[:depth])]
                 res_w = res_w * mlv[depth].to(res_w.dtype)
+            if bounds is not None:
+                bounds.update(frame, device, mlv[0] if mlv is not None else None)
 
             if state is None:
                 state = _FoldState(
@@ -219,6 +264,8 @@ class PMax:
         # ------------------------------------------------------------------ #
         residual = state.res_num / state.res_den.clamp_min(1e-8)
         result = collapse_laplacian(state.lap, residual)
+        if bounds is not None:
+            result = bounds.apply(result)
 
         _tick(total_steps - 1, "collapse")
         if progress is not None:
